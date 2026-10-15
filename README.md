@@ -622,6 +622,8 @@ snippet under [`examples/`](./examples/):
   mutations, server components.
 - [Authentication and refresh tokens](./guides/auth-refresh-token.md): token store, `headers`
   provider, refresh-on-401 middleware with single-flight refresh.
+- [Serving the contract](./guides/server.md): one shared contract, typed handlers, thrown
+  errors that round-trip to the client, deployed on Bun/Workers, Node/Express or Hono.
 - [Testing](./guides/testing.md): `mockAdapter` from `endpoint-kit/testing`, MSW, testing middlewares and timers.
 
 ## Development
