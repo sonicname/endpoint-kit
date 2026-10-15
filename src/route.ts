@@ -5,6 +5,7 @@ import type { CacheOptions } from './middleware/cache.js';
 import type { RetryOptions } from './middleware/retry.js';
 import type { Middleware } from './middleware/types.js';
 import type { AnySchema, StandardSchemaV1 } from './standard-schema.js';
+import type { QuerySerializerSpec } from './url.js';
 
 /** A schema slot: either a Standard Schema or nothing. */
 export type SchemaOrUndefined = AnySchema | undefined;
@@ -186,6 +187,8 @@ export interface RouteDefinition<
    * take precedence over repository ones.
    */
   errors?: TErrors;
+  /** How to serialise the query string. Overrides the repository setting. */
+  querySerializer?: QuerySerializerSpec;
   /** Static headers sent with every call of this route. */
   headers?: Record<string, string>;
   /** Adapter specific options (axios config, ofetch options, RequestInit...). */

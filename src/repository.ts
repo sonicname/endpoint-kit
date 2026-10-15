@@ -26,6 +26,7 @@ import type {
 } from './route.js';
 import type { AnySchema, StandardSchemaV1 } from './standard-schema.js';
 import { buildUrl } from './url.js';
+import type { QuerySerializerSpec } from './url.js';
 
 /** Headers shared by every request: a static map or a (possibly async) factory, handy for auth tokens. */
 export type HeadersProvider =
@@ -75,6 +76,11 @@ export interface RepositoryConfig<TErrors extends ErrorsSpec = ErrorsSpec> {
   headers?: HeadersProvider;
   /** Adapter specific options merged into every request. */
   options?: Record<string, unknown>;
+  /**
+   * How to serialise query strings: `{ arrayFormat, objectFormat }` or a custom function.
+   * Routes can override it.
+   */
+  querySerializer?: QuerySerializerSpec;
   /** Validate response bodies against their `response` schema. Defaults to `true`. */
   validateResponse?: boolean;
   /** Decide whether a status code is a success. Defaults to `200 <= status < 300`. */
@@ -267,7 +273,13 @@ async function execute(
       typeof config.headers === 'function' ? await config.headers() : config.headers;
 
     request = {
-      url: buildUrl(config.baseUrl, route.path, params, query),
+      url: buildUrl(
+        config.baseUrl,
+        route.path,
+        params,
+        query,
+        route.querySerializer ?? config.querySerializer,
+      ),
       method: route.method,
       headers: { ...baseHeaders, ...route.headers, ...input.headers },
       responseType: route.responseType ?? 'json',

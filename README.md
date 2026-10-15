@@ -99,7 +99,7 @@ const issue = await github.createIssue({
 | `method`       | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` or `OPTIONS`.                                                                                                                                                             |
 | `path`         | Path relative to `baseUrl`. `:name` segments become path params.                                                                                                                                                          |
 | `params`       | Path param validation: a per-key map `{ id: z.coerce.number() }` (keys are autocompleted from `path`) or a whole-object schema. Both are checked against the path at compile time. Params without a schema accept `string | number`. |
-| `query`        | Schema for the query string. Arrays become repeated keys, `undefined` values are skipped.                                                                                                                                 |
+| `query`        | Schema for the query string. `undefined` values are skipped; arrays and nested objects follow `querySerializer` (`repeat`/`brackets`/`indices`/`comma`, `json`/`brackets`/`dots`).                                        |
 | `body`         | Schema for the request body. Plain objects are JSON encoded, `FormData`/`Blob` pass through.                                                                                                                              |
 | `response`     | Schema for the response body. Its output type is what the caller resolves with.                                                                                                                                           |
 | `responseType` | `json` (default), `text`, `blob`, `arrayBuffer` or `none`.                                                                                                                                                                |
@@ -216,6 +216,7 @@ createRepository({
   adapter: fetchAdapter({ init: { credentials: 'include' } }), // default: fetchAdapter()
   headers: async () => ({ authorization: `Bearer ${await getToken()}` }),
   options: {}, // adapter specific, merged into every request
+  querySerializer: { arrayFormat: 'brackets', objectFormat: 'brackets' }, // qs style; routes can override
   validateResponse: true, // set false to skip response schema validation
   isSuccess: (status) => status < 400, // default: 200 <= status < 300
   hooks: {

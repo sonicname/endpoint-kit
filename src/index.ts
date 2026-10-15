@@ -101,3 +101,4 @@ export type { PolicyInput } from './policy.js';
 
 export type { AnySchema, StandardSchemaV1 } from './standard-schema.js';
 export { buildQueryString, buildUrl, interpolatePath, joinUrl, toStringValue } from './url.js';
+export type { QuerySerializer, QuerySerializerOptions, QuerySerializerSpec } from './url.js';
