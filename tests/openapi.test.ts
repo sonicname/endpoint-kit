@@ -42,6 +42,10 @@ const petstore: OpenApiDocument = {
           '201': {
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Pet' } } },
           },
+          '5XX': { description: 'server trouble' },
+          default: {
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Problem' } } },
+          },
         },
       },
     },
@@ -171,6 +175,11 @@ describe('generateFromOpenApi', () => {
     expect(result.code).toContain(
       'errors: { 401: (ctx) => new UnauthorizedError(ctx.data, ctx), 404: errorFromSchema(Problem, (data, ctx) => new NotFoundError(data, ctx)) }',
     );
+    expect(result.code).toContain('export class ServerError<TData = unknown>');
+    expect(result.code).toContain('export class UnexpectedError<TData = unknown>');
+    expect(result.code).toContain(
+      '"5XX": (ctx) => new ServerError(ctx.data, ctx), "default": errorFromSchema(Problem, (data, ctx) => new UnexpectedError(data, ctx))',
+    );
     const without = generateFromOpenApi(petstore, { emitErrors: false });
     expect(without.code).not.toContain('TaggedError');
     expect(without.code).not.toContain('errors:');
@@ -190,9 +199,9 @@ describe('generateFromOpenApi', () => {
     );
     expect(result.code).toContain("bodyType: 'multipart'");
     expect(result.code).toContain("responseType: 'sse', response: Pet");
-    expect(result.warnings).toEqual([
-      'GET /pets: header parameters (X-Trace) are not generated; pass them via `headers` at call time',
-    ]);
+    expect(result.warnings).toEqual([]);
+    expect(result.code).toContain('headers: z.object({ "x-trace": z.string().optional() })');
+    expect(result.routes[0]?.headerParams).toEqual(['x-trace']);
   });
 
   it('produces code that imports, validates and calls', async () => {

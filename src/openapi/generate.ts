@@ -1,4 +1,5 @@
 import { ErrorClasses } from './errors.js';
+import type { ErrorKey } from './errors.js';
 import { collectRefs, literal, propertyKey, schemaToZod } from './schema.js';
 import type { JsonSchema } from './schema.js';
 
@@ -87,7 +88,7 @@ export interface GeneratedRoute {
   name: string;
   method: HttpVerb;
   path: string;
-  /** Headers declared as parameters, which the generator does not model. */
+  /** Header parameters (lower-cased), emitted as a `headers` schema on the route. */
   headerParams: string[];
 }
 
@@ -148,7 +149,9 @@ export function generateFromOpenApi(
       const fields: string[] = [];
       const pathParams = parameters.filter((p) => p.in === 'path');
       const queryParams = parameters.filter((p) => p.in === 'query');
-      const headerParams = parameters.filter((p) => p.in === 'header').map((p) => p.name);
+      const headerParams = parameters
+        .filter((p) => p.in === 'header')
+        .map((p) => p.name.toLowerCase());
 
       if (pathParams.length > 0) {
         const entries = pathParams.map(
@@ -190,26 +193,33 @@ export function generateFromOpenApi(
       if (emitErrors) {
         const entries: string[] = [];
         for (const [code, raw] of Object.entries(operation.responses ?? {})) {
-          if (!/^[45]\d\d$/.test(code)) continue;
+          const key = errorKeyOf(code);
+          if (key === undefined) continue;
           const errorResponse = resolveResponse(raw, doc);
-          const className = errorClasses.for(Number(code));
+          const className = errorClasses.for(key);
           const media = errorResponse.content ? pickMedia(errorResponse.content)[1] : undefined;
           if (media?.schema) {
             needsErrorFromSchema = true;
             entries.push(
-              `${code}: errorFromSchema(${schemaToZod(media.schema, ctx)}, (data, ctx) => new ${className}(data, ctx))`,
+              `${errorMapKey(key)}: errorFromSchema(${schemaToZod(media.schema, ctx)}, (data, ctx) => new ${className}(data, ctx))`,
             );
           } else {
-            entries.push(`${code}: (ctx) => new ${className}(ctx.data, ctx)`);
+            entries.push(`${errorMapKey(key)}: (ctx) => new ${className}(ctx.data, ctx)`);
           }
         }
         if (entries.length > 0) fields.push(`errors: { ${entries.join(', ')} }`);
       }
 
-      if (headerParams.length > 0) {
-        warnings.push(
-          `${verb.toUpperCase()} ${rawPath}: header parameters (${headerParams.join(', ')}) are not generated; pass them via \`headers\` at call time`,
-        );
+      const headerParameters = parameters.filter((p) => p.in === 'header');
+      if (headerParameters.length > 0) {
+        const properties: Record<string, JsonSchema> = {};
+        const required: string[] = [];
+        for (const p of headerParameters) {
+          const key = p.name.toLowerCase();
+          properties[key] = p.schema ?? { type: 'string' };
+          if (p.required) required.push(key);
+        }
+        fields.push(`headers: ${schemaToZod({ type: 'object', properties, required }, ctx)}`);
       }
 
       const comment = jsDoc(
@@ -470,4 +480,17 @@ function indent(block: string): string {
     .split('\n')
     .map((line) => (line.length > 0 ? `  ${line}` : line))
     .join('\n');
+}
+
+/** Map an OpenAPI response code to an `errors` key: 4xx/5xx statuses, `4XX`/`5XX` classes, `default`. */
+function errorKeyOf(code: string): ErrorKey | undefined {
+  if (/^[45]\d\d$/.test(code)) return Number(code);
+  const upper = code.toUpperCase();
+  if (upper === '4XX' || upper === '5XX') return upper;
+  if (code === 'default') return 'default';
+  return undefined;
+}
+
+function errorMapKey(key: ErrorKey): string {
+  return typeof key === 'number' ? String(key) : literal(key);
 }

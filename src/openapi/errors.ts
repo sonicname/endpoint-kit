@@ -23,41 +23,61 @@ const STATUS_NAMES: Record<number, string> = {
   504: 'GatewayTimeoutError',
 };
 
-/** Tracks one generated `TaggedError` subclass per HTTP status used by the spec. */
+/** Keys an `errors` map accepts: a status, a status class or `default`. */
+export type ErrorKey = number | '4XX' | '5XX' | 'default';
+
+const RANGE_NAMES: Record<string, string> = {
+  '4XX': 'ClientError',
+  '5XX': 'ServerError',
+  default: 'UnexpectedError',
+};
+
+/** Tracks one generated `TaggedError` subclass per HTTP status (or class) used by the spec. */
 export class ErrorClasses {
-  /** status → class name, in first-use order. */
-  readonly used = new Map<number, string>();
+  /** key → class name, in first-use order. */
+  readonly used = new Map<ErrorKey, string>();
   readonly #taken: Set<string>;
 
   constructor(reserved: readonly string[]) {
     this.#taken = new Set(reserved);
   }
 
-  /** Class name for `status`, creating it on first use. */
-  for(status: number): string {
-    const existing = this.used.get(status);
+  /** Class name for `key`, creating it on first use. */
+  for(key: ErrorKey): string {
+    const existing = this.used.get(key);
     if (existing) return existing;
-    let name = STATUS_NAMES[status] ?? `Http${String(status)}Error`;
+    const base =
+      typeof key === 'number'
+        ? (STATUS_NAMES[key] ?? `Http${String(key)}Error`)
+        : (RANGE_NAMES[key] ?? 'UnexpectedError');
+    let name = base;
     let counter = 2;
-    while (this.#taken.has(name))
-      name = `${STATUS_NAMES[status] ?? `Http${String(status)}Error`}${String(counter++)}`;
+    while (this.#taken.has(name)) name = `${base}${String(counter++)}`;
     this.#taken.add(name);
-    this.used.set(status, name);
+    this.used.set(key, name);
     return name;
   }
 
   /** Source of every class, sorted by status. */
   declarations(): string[] {
+    const rank = (key: ErrorKey): number =>
+      typeof key === 'number' ? key : key === '4XX' ? 499.5 : key === '5XX' ? 599.5 : 1000;
     return [...this.used.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([status, name]) => classSource(status, name));
+      .sort(([a], [b]) => rank(a) - rank(b))
+      .map(([key, name]) => classSource(key, name));
   }
 }
 
-function classSource(status: number, name: string): string {
+function classSource(key: ErrorKey, name: string): string {
   const tag = literal(name);
+  const label =
+    typeof key === 'number'
+      ? `HTTP ${String(key)}`
+      : key === 'default'
+        ? 'Any other failing status'
+        : `HTTP ${key}`;
   return [
-    `/** HTTP ${String(status)}. \`data\` is the response body, typed per route when the spec gives a schema. */`,
+    `/** ${label}. \`data\` is the response body, typed per route when the spec gives a schema. */`,
     `export class ${name}<TData = unknown> extends TaggedError<${tag}> {`,
     `  readonly _tag = ${tag};`,
     `  override readonly name = ${tag};`,

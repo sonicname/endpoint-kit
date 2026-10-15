@@ -12,7 +12,7 @@ export abstract class TaggedError<Tag extends string = string> extends Error {
 }
 
 /** Where a validation failure happened. */
-export type ValidationTarget = 'params' | 'query' | 'body' | 'response' | 'error';
+export type ValidationTarget = 'params' | 'query' | 'body' | 'headers' | 'response' | 'error';
 
 /** Thrown when request input or the response body does not match its schema. */
 export class ValidationError extends TaggedError<'ValidationError'> {

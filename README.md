@@ -1,6 +1,6 @@
 # endpoint-kit
 
-[![CI](https://github.com/sonicname/api-repositories/actions/workflows/ci.yml/badge.svg)](https://github.com/sonicname/api-repositories/actions/workflows/ci.yml)
+[![CI](https://github.com/sonicname/endpoint-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/sonicname/endpoint-kit/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/endpoint-kit.svg)](https://www.npmjs.com/package/endpoint-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
@@ -107,7 +107,7 @@ const issue = await github.createIssue({
 | `body`         | Schema for the request body. Encoded per `bodyType`: `json` (default), `multipart` (`FormData`, for `File`/`Blob` fields) or `form` (`application/x-www-form-urlencoded`).                                                |
 | `response`     | Schema for the response body. Its output type is what the caller resolves with.                                                                                                                                           |
 | `responseType` | `json` (default), `text`, `blob`, `arrayBuffer`, `none`, `stream` (a `ReadableStream<Uint8Array>`) or `sse` (an `AsyncIterable` of server-sent events, validated per event when `response` is set).                       |
-| `headers`      | Static headers for this route.                                                                                                                                                                                            |
+| `headers`      | Static headers for this route, or a schema: then the caller must pass `headers` matching it (typed, validated) and the server receives them validated.                                                                    |
 | `options`      | Adapter specific options (axios config, ofetch options, `RequestInit`).                                                                                                                                                   |
 
 A route can be reused across several repositories.
@@ -466,7 +466,9 @@ const { error } = await github.getRepo({ params: { owner: 'octocat', repo: 'x' }
 //      ^? RouteError | NotFoundError | UnauthorizedError | null
 ```
 
-Route factories take precedence over repository ones. Any other failing status is an `ApiError`.
+Keys may also be `'4XX'`, `'5XX'` or `'default'`; lookup order is exact status, then class, then
+default. Route factories take precedence over repository ones. Any other failing status is an
+`ApiError`.
 The factory context has `status`, `statusText`, `headers`, `data` (parsed body, `unknown`) and
 `route`. Factories may be async. Tagged errors thrown from your own middlewares pass through
 untouched as well.
@@ -557,10 +559,10 @@ const api = createRepository({ baseUrl: servers[0] }).mergeAll(routes).build();
 What is covered: `components.schemas` (with recursion via zod getters and `$ref` ordering),
 path and query parameters, JSON, multipart and form request bodies, the first 2xx response as
 `json`, `text`, `blob`, `none` or `sse`, `summary`/`description`/`deprecated` as JSDoc,
-`servers`, and 4xx/5xx responses: one `TaggedError` class per status (`NotFoundError`,
-`UnauthorizedError`, `Http418Error`...) plus an `errors` map on each route, with `data` typed
-from the response schema when there is one. Header parameters are reported as warnings and left
-to `headers` at call time. The generator is also available programmatically from
+`servers`, header parameters as a `headers` schema, and error responses: one `TaggedError`
+class per status or class (`NotFoundError`, `Http418Error`, `ClientError` for `4XX`,
+`ServerError` for `5XX`, `UnexpectedError` for `default`) plus an `errors` map on each route,
+with `data` typed from the response schema when there is one. The generator is also available programmatically from
 `endpoint-kit/openapi` as `generateFromOpenApi(document, options)`; pass `--no-errors` /
 `emitErrors: false` to skip the error classes.
 
@@ -589,11 +591,24 @@ app.all('*', (c) => handler(c.req.raw)); // Hono, or registerHono(app, routes, h
 ```
 
 Handlers return the response body, a `reply(status, body?, headers?)`, or a raw `Response`;
-throwing a `reply(...)` works too. Invalid input answers 400 with the schema issues, an invalid
+throwing a `reply(...)` works too. Throwing a `TaggedError` (your route `errors` classes, or the
+ones generated from OpenAPI) answers with its `status` (else 500) and
+`{ error: _tag, message, data? }`, so client and server share one set of error classes. Invalid input answers 400 with the schema issues, an invalid
 return value answers 500, unknown paths 404 and wrong methods 405 with an `Allow` header. Query
 and form values arrive as strings, so validation retries with numbers and booleans coerced when
-the first pass fails; shared `z.number()` schemas just work. `basePath`, `querySerializer`
-and `onError` are the options.
+the first pass fails; shared `z.number()` schemas just work (`coerce: false` turns that off when
+a schema must tell `"12"` from `12`). `basePath`, `querySerializer`, `errorStatus` and
+`onError` are the other options.
+
+For Node.js, Express and Connect use `endpoint-kit/server/node`:
+
+```ts
+import { createNodeHandler } from 'endpoint-kit/server/node';
+
+const handler = createNodeHandler(routes, handlers, { basePath: '/api', trustProxy: true });
+http.createServer(handler).listen(3000);
+app.use(handler); // Express: paths that match no route fall through to next()
+```
 
 ## Guides
 

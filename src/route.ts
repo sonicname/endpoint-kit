@@ -125,8 +125,24 @@ export function errorFromSchema<TSchema extends AnySchema, TError extends Tagged
   };
 }
 
-/** Custom errors keyed by HTTP status. The factory's return type becomes part of `error`'s type. */
-export type ErrorFactories = Readonly<Record<number, ErrorFactory>>;
+/**
+ * Keys of an `errors` map: an exact status, a class of statuses (`'4XX'`, `'5XX'`) or
+ * `'default'`. Lookup order: exact status, then class, then default.
+ */
+export type ErrorStatusKey = number | '4XX' | '5XX' | 'default';
+
+/** Custom errors keyed by status. The factory's return type becomes part of `error`'s type. */
+export type ErrorFactories = Readonly<Partial<Record<ErrorStatusKey, ErrorFactory>>>;
+
+/** Pick the factory for `status`: exact match, then `4XX`/`5XX`, then `default`. */
+export function findErrorFactory(
+  factories: ErrorFactories | undefined,
+  status: number,
+): ErrorFactory | undefined {
+  if (!factories) return undefined;
+  const range = status >= 500 ? '5XX' : status >= 400 ? '4XX' : undefined;
+  return factories[status] ?? (range ? factories[range] : undefined) ?? factories.default;
+}
 
 /** Everything the `errors` field accepts. */
 export type ErrorsSpec = ErrorFactories | undefined;
@@ -139,7 +155,7 @@ export type InferErrors<E> = [NonNullable<E>] extends [never]
   ? never
   : ErrorFactories extends NonNullable<E>
     ? never
-    : NonNullable<E>[keyof NonNullable<E>] extends (...args: never[]) => infer R
+    : NonNullable<NonNullable<E>[keyof NonNullable<E>]> extends (...args: never[]) => infer R
       ? Extract<Awaited<R>, TaggedError>
       : never;
 
@@ -166,6 +182,7 @@ export interface RouteDefinition<
   TResponse extends SchemaOrUndefined = SchemaOrUndefined,
   TResponseType extends ResponseType = ResponseType,
   TErrors extends ErrorsSpec = ErrorsSpec,
+  THeaders extends SchemaOrUndefined = SchemaOrUndefined,
 > {
   method: HttpMethod;
   /** Path relative to the repository `baseUrl`. Use `:name` segments for path params. */
@@ -197,8 +214,11 @@ export interface RouteDefinition<
   errors?: TErrors;
   /** How to serialise the query string. Overrides the repository setting. */
   querySerializer?: QuerySerializerSpec;
-  /** Static headers sent with every call of this route. */
-  headers?: Record<string, string>;
+  /**
+   * Either static headers sent with every call, or a schema validating (and typing) the
+   * headers the caller must pass. Schema keys should be lower case.
+   */
+  headers?: Record<string, string> | THeaders;
   /** Adapter specific options (axios config, ofetch options, RequestInit...). */
   options?: Record<string, unknown>;
   /** Per-attempt timeout in ms. `false` disables a repository-level timeout. */
@@ -247,11 +267,21 @@ export function createRoute<
   // Defaults to the wide spec (not `undefined`) so factories get a contextual type for `ctx`
   // before TErrors is inferred; InferErrors treats the wide spec as "no custom errors".
   TErrors extends ErrorsSpec = ErrorsSpec,
+  THeaders extends SchemaOrUndefined = undefined,
 >(
-  definition: RouteDefinition<TPath, TParams, TQuery, TBody, TResponse, TResponseType, TErrors> & {
+  definition: RouteDefinition<
+    TPath,
+    TParams,
+    TQuery,
+    TBody,
+    TResponse,
+    TResponseType,
+    TErrors,
+    THeaders
+  > & {
     params?: NoInfer<ValidateParams<TPath, TParams>>;
   },
-): RouteDefinition<TPath, TParams, TQuery, TBody, TResponse, TResponseType, TErrors> {
+): RouteDefinition<TPath, TParams, TQuery, TBody, TResponse, TResponseType, TErrors, THeaders> {
   return definition;
 }
 
@@ -264,8 +294,9 @@ export type RouteOptions<
   TResponse extends SchemaOrUndefined,
   TResponseType extends ResponseType,
   TErrors extends ErrorsSpec,
+  THeaders extends SchemaOrUndefined = undefined,
 > = Omit<
-  RouteDefinition<TPath, TParams, TQuery, TBody, TResponse, TResponseType, TErrors>,
+  RouteDefinition<TPath, TParams, TQuery, TBody, TResponse, TResponseType, TErrors, THeaders>,
   'method' | 'path'
 >;
 
@@ -280,12 +311,22 @@ export type MethodRouteFactory = <
   // Defaults to the wide spec (not `undefined`) so factories get a contextual type for `ctx`
   // before TErrors is inferred; InferErrors treats the wide spec as "no custom errors".
   TErrors extends ErrorsSpec = ErrorsSpec,
+  THeaders extends SchemaOrUndefined = undefined,
 >(
   path: TPath,
-  options?: RouteOptions<TPath, TParams, TQuery, TBody, TResponse, TResponseType, TErrors> & {
+  options?: RouteOptions<
+    TPath,
+    TParams,
+    TQuery,
+    TBody,
+    TResponse,
+    TResponseType,
+    TErrors,
+    THeaders
+  > & {
     params?: NoInfer<ValidateParams<TPath, TParams>>;
   },
-) => RouteDefinition<TPath, TParams, TQuery, TBody, TResponse, TResponseType, TErrors>;
+) => RouteDefinition<TPath, TParams, TQuery, TBody, TResponse, TResponseType, TErrors, THeaders>;
 
 function methodFactory(method: HttpMethod): MethodRouteFactory {
   return (path, options) => ({ ...options, method, path });
@@ -380,6 +421,26 @@ export type RouteQuery<R extends AnyRoute> = InputOf<R['query']>;
 /** Body accepted by a route, or `never` when it has no body schema. */
 export type RouteBody<R extends AnyRoute> = InputOf<R['body']>;
 
+/** The header schema of a route, or `never` when `headers` is static or absent. */
+export type HeaderSchemaOf<R extends AnyRoute> =
+  Extract<NonNullable<R['headers']>, AnySchema> extends infer S
+    ? [S] extends [never]
+      ? never
+      : AnySchema extends S
+        ? never
+        : S
+    : never;
+
+/** Headers the caller must pass when the route has a header schema, else `never`. */
+export type RouteHeaders<R extends AnyRoute> = [HeaderSchemaOf<R>] extends [never]
+  ? never
+  : StandardSchemaV1.InferInput<HeaderSchemaOf<R>>;
+
+/** Validated headers on the server: schema output, or the raw `Headers` without a schema. */
+export type RouteHeadersOutput<R extends AnyRoute> = [HeaderSchemaOf<R>] extends [never]
+  ? Headers
+  : StandardSchemaV1.InferOutput<HeaderSchemaOf<R>>;
+
 // --- Output (server side) types -------------------------------------------
 
 /** Path params after validation: schema outputs, or strings for params without a schema. */
@@ -413,10 +474,8 @@ export type RouteBodyOutput<R extends AnyRoute> = OutputOf<R['body'], undefined>
 /** What a server handler must return: the response schema *input*, or `unknown` without one. */
 export type RouteResponseInput<R extends AnyRoute> = InputOf<R['response'], unknown>;
 
-/** Options every call accepts in addition to params/query/body. */
-export interface CallOptions {
-  /** Extra headers merged over repository and route headers. */
-  headers?: Record<string, string>;
+/** Options every call accepts in addition to params/query/body/headers. */
+export interface CallOptionsBase {
   /** Abort the request. */
   signal?: AbortSignal;
   /** Adapter specific options merged over repository and route options. */
@@ -429,12 +488,24 @@ export interface CallOptions {
   cache?: CacheOptions | number | false;
 }
 
+/** Options every call accepts, with free-form headers (routes without a header schema). */
+export interface CallOptions extends CallOptionsBase {
+  /** Extra headers merged over repository and route headers. */
+  headers?: Record<string, string>;
+}
+
+/** `headers` field of the input: typed by the schema when there is one, free-form otherwise. */
+type HeadersField<R extends AnyRoute> = [RouteHeaders<R>] extends [never]
+  ? { headers?: Record<string, string> }
+  : Field<'headers', RouteHeaders<R>>;
+
 /** The single argument a route caller accepts. */
 export type RouteInput<R extends AnyRoute> = Simplify<
   Field<'params', RouteParams<R>> &
     Field<'query', RouteQuery<R>> &
     Field<'body', RouteBody<R>> &
-    CallOptions
+    HeadersField<R> &
+    CallOptionsBase
 >;
 
 /** Argument tuple for a route caller: the input becomes optional when nothing in it is required. */

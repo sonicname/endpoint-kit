@@ -64,7 +64,9 @@ export function groupRoutes<const TPrefix extends string = '', TRoutes extends R
   for (const [name, route] of Object.entries(routes)) {
     const merged: AnyRoute = { ...route, path: `${prefix}${route.path}` };
 
-    if (group.headers) merged.headers = { ...group.headers, ...route.headers };
+    if (group.headers && !isSchema(route.headers)) {
+      merged.headers = { ...group.headers, ...route.headers };
+    }
     if (group.options) merged.options = { ...group.options, ...route.options };
     if (group.middlewares) {
       merged.middlewares = [...group.middlewares, ...(route.middlewares ?? [])];
@@ -77,4 +79,8 @@ export function groupRoutes<const TPrefix extends string = '', TRoutes extends R
   }
 
   return result as GroupedRoutes<TPrefix, TRoutes>;
+}
+
+function isSchema(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && '~standard' in value;
 }

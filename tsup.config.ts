@@ -11,6 +11,7 @@ export default defineConfig([
       'testing/index': 'src/testing.ts',
       'tanstack-query/index': 'src/tanstack-query.ts',
       'server/index': 'src/server/index.ts',
+      'server/node/index': 'src/server/node.ts',
     },
     format: ['esm', 'cjs'],
     dts: true,

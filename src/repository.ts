@@ -11,6 +11,7 @@ import { composeMiddlewares } from './middleware/types.js';
 import type { Middleware, MiddlewareContext } from './middleware/types.js';
 import type { PaginateOptions } from './pagination.js';
 import { resolvePolicy, resolveTimeout } from './policy.js';
+import { findErrorFactory } from './route.js';
 import type {
   AnyRoute,
   ErrorFactory,
@@ -28,7 +29,7 @@ import type {
 import type { AnySchema, StandardSchemaV1 } from './standard-schema.js';
 import { encodeBody } from './body.js';
 import { decodeServerSentEvents } from './sse.js';
-import { buildUrl } from './url.js';
+import { buildUrl, toStringValue } from './url.js';
 import type { QuerySerializerSpec } from './url.js';
 
 /** Headers shared by every request: a static map or a (possibly async) factory, handy for auth tokens. */
@@ -324,7 +325,15 @@ async function execute(
         route.querySerializer ?? config.querySerializer,
       ),
       method: route.method,
-      headers: { ...baseHeaders, ...route.headers, ...input.headers },
+      headers: {
+        ...baseHeaders,
+        ...(isSchema(route.headers) ? undefined : route.headers),
+        ...stringifyHeaders(
+          isSchema(route.headers)
+            ? await validate(name, 'headers', route.headers, input.headers)
+            : input.headers,
+        ),
+      },
       responseType: route.responseType ?? 'json',
       signal: input.signal,
       options: { ...config.options, ...route.options, ...input.options },
@@ -398,7 +407,8 @@ async function failureFor(
   response: AdapterResponse,
 ): Promise<TaggedError> {
   const factory: ErrorFactory | undefined =
-    route.errors?.[response.status] ?? config.errors?.[response.status];
+    findErrorFactory(route.errors, response.status) ??
+    findErrorFactory(config.errors, response.status);
   if (factory) {
     return factory({
       status: response.status,
@@ -454,6 +464,16 @@ function hooksMiddleware(hooks: RepositoryHooks): Middleware {
   };
 }
 
+/** Header values must be strings on the wire; drop `undefined`, stringify the rest. */
+function stringifyHeaders(headers: unknown): Record<string, string> {
+  if (typeof headers !== 'object' || headers === null) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (value !== undefined && value !== null) out[key] = toStringValue(value);
+  }
+  return out;
+}
+
 function redact(config: RepositoryConfig, headers: Record<string, string>): Record<string, string> {
   if (config.redactHeaders === false) return headers;
   return redactHeaders(headers, config.redactHeaders);
@@ -473,7 +493,8 @@ async function validate(
   // An omitted params/query/body is validated as `{}` so all-optional schemas pass and
   // defaults apply. Response bodies keep `undefined` (204, `responseType: 'none'`).
   const subject =
-    value === undefined && (target === 'params' || target === 'query' || target === 'body')
+    value === undefined &&
+    (target === 'params' || target === 'query' || target === 'body' || target === 'headers')
       ? {}
       : value;
   const result = await schema['~standard'].validate(subject);

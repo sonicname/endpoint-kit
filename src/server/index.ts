@@ -18,10 +18,11 @@
  *
  * @packageDocumentation
  */
-import { ValidationError } from '../errors.js';
+import { TaggedError, ValidationError } from '../errors.js';
 import type {
   AnyRoute,
   RouteBodyOutput,
+  RouteHeadersOutput,
   RouteMap,
   RouteParamsOutput,
   RouteQueryOutput,
@@ -39,7 +40,8 @@ export interface HandlerContext<R extends AnyRoute> {
   params: RouteParamsOutput<R>;
   query: RouteQueryOutput<R>;
   body: RouteBodyOutput<R>;
-  headers: Headers;
+  /** Validated headers (schema output) when the route has a header schema, else the raw `Headers`. */
+  headers: RouteHeadersOutput<R>;
   request: Request;
   /** Route name, as registered. */
   route: string;
@@ -79,8 +81,19 @@ export interface ServerOptions {
   /** How query strings were serialised by clients. Defaults to `repeat` arrays and JSON objects. */
   querySerializer?: QuerySerializerOptions;
   /**
-   * Turn an unexpected error (not a `HttpReply`, not validation) into a response.
-   * Defaults to a 500 with `{ error: 'InternalServerError' }`.
+   * Retry validation with `"12"` → `12` and `"true"` → `true` coerced when the first pass
+   * fails, so query/params/form schemas shared with the client (`z.number()`) just work.
+   * Defaults to `true`. Turn it off when a schema must distinguish `"12"` from `12`.
+   */
+  coerce?: boolean;
+  /**
+   * Status for a thrown `TaggedError` (the classes generated from OpenAPI, or your own route
+   * `errors` classes). Defaults to the error's own `status` property, else 500.
+   */
+  errorStatus?: (error: TaggedError) => number | undefined;
+  /**
+   * Turn an unexpected error (not a `HttpReply`, not validation, not a `TaggedError`) into a
+   * response. Defaults to a 500 with `{ error: 'InternalServerError' }`.
    */
   onError?: (
     error: unknown,
@@ -166,6 +179,7 @@ export function createFetchHandler<TRoutes extends RouteMap>(
 ): (request: Request) => Promise<Response> {
   const compiled = Object.entries(routes).map(([name, route]) => compile(name, route));
   const basePath = options.basePath ?? '';
+  const coerce = options.coerce !== false;
 
   return async (request) => {
     const url = new URL(request.url);
@@ -198,20 +212,30 @@ export function createFetchHandler<TRoutes extends RouteMap>(
 
     try {
       const context: HandlerContext<AnyRoute> = {
-        params: await validateParams(entry, params),
+        params: await validateParams(entry, params, coerce),
         query: (await validateLenient(
           'query',
           entry.route.query,
           parseQuery(url.searchParams, options.querySerializer),
           entry.name,
+          coerce,
         )) as never,
         body: (await validateLenient(
           'body',
           entry.route.body,
           await readBody(request),
           entry.name,
+          coerce,
         )) as never,
-        headers: request.headers,
+        headers: (isSchema(entry.route.headers)
+          ? await validateLenient(
+              'headers',
+              entry.route.headers,
+              Object.fromEntries(request.headers),
+              entry.name,
+              coerce,
+            )
+          : request.headers) as never,
         request,
         route: entry.name,
       };
@@ -228,6 +252,7 @@ export function createFetchHandler<TRoutes extends RouteMap>(
           issues: error.issues,
         });
       }
+      if (isTaggedError(error)) return taggedErrorResponse(error, options);
       if (options.onError) return options.onError(error, { route: entry.name, request });
       return json(500, { error: 'InternalServerError' });
     }
@@ -355,17 +380,18 @@ async function readBody(request: Request): Promise<unknown> {
 async function validateParams(
   entry: Compiled,
   raw: Record<string, string>,
+  coerce: boolean,
 ): Promise<Record<string, unknown>> {
   const spec = entry.route.params;
   if (spec === undefined) return raw;
   if (isSchema(spec)) {
-    const parsed = await validateLenient('params', spec, raw, entry.name);
+    const parsed = await validateLenient('params', spec, raw, entry.name, coerce);
     return { ...raw, ...(parsed as Record<string, unknown>) };
   }
   const result: Record<string, unknown> = { ...raw };
   for (const [key, schema] of Object.entries(spec)) {
     if (!isSchema(schema)) continue;
-    result[key] = await validateLenient('params', schema, raw[key], entry.name, key);
+    result[key] = await validateLenient('params', schema, raw[key], entry.name, coerce, key);
   }
   return result;
 }
@@ -375,17 +401,18 @@ async function validateParams(
  * bodies), retry with numbers/booleans coerced so shared `z.number()` schemas work.
  */
 async function validateLenient(
-  target: 'params' | 'query' | 'body',
+  target: 'params' | 'query' | 'body' | 'headers',
   schema: AnySchema | undefined,
   value: unknown,
   route: string,
+  coerce = true,
   prefix?: string,
 ): Promise<unknown> {
   if (!schema) return value;
   const subject = value === undefined ? {} : value;
   const first = await schema['~standard'].validate(subject);
   if (!first.issues) return first.value;
-  const coerced = coercePrimitives(subject);
+  const coerced = coerce ? coercePrimitives(subject) : subject;
   if (coerced !== subject) {
     const second = await schema['~standard'].validate(coerced);
     if (!second.issues) return second.value;
@@ -432,6 +459,10 @@ function isSchema(value: unknown): value is AnySchema {
   return typeof value === 'object' && value !== null && '~standard' in value;
 }
 
+function isTaggedError(value: unknown): value is TaggedError {
+  return value instanceof TaggedError;
+}
+
 // ---------------------------------------------------------------------------
 // Responses
 // ---------------------------------------------------------------------------
@@ -468,6 +499,19 @@ async function toResponse(
     default:
       return body === undefined ? new Response(null, { status: 204 }) : json(200, body);
   }
+}
+
+/**
+ * A thrown `TaggedError` becomes `{ error: _tag, message, data? }` with its `status`
+ * (or 500), so a server can throw the same error classes its clients declare in `errors`.
+ */
+function taggedErrorResponse(error: TaggedError, options: ServerOptions): Response {
+  const own = (error as { status?: unknown }).status;
+  const status = options.errorStatus?.(error) ?? (typeof own === 'number' ? own : 500);
+  const data = (error as { data?: unknown }).data;
+  const body: Record<string, unknown> = { error: error._tag, message: error.message };
+  if (data !== undefined) body['data'] = data;
+  return json(status, body);
 }
 
 function replyToResponse(answer: HttpReply): Response {

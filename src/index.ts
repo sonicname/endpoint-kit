@@ -4,13 +4,15 @@
  * @packageDocumentation
  */
 
-export { createRoute, errorFromSchema } from './route.js';
+export { createRoute, errorFromSchema, findErrorFactory } from './route.js';
 export type {
   AnyRoute,
   CallOptions,
+  CallOptionsBase,
   ErrorContext,
   ErrorFactories,
   ErrorFactory,
+  ErrorStatusKey,
   ErrorsSpec,
   InferErrors,
   MethodRouteFactory,
@@ -25,6 +27,9 @@ export type {
   RouteDefinition,
   RouteErrors,
   RouteFailure,
+  RouteHeaders,
+  RouteHeadersOutput,
+  HeaderSchemaOf,
   RouteInput,
   RouteMap,
   RouteOptions,
