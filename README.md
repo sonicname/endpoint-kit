@@ -12,6 +12,8 @@ Declare your backend endpoints once, get a fully typed API client.
   schema input types, the result is the response schema output type.
 - **Organised**: `createRoute.get('/path', {...})` shorthands and `groupRoutes` to prefix and
   share settings across a set of routes.
+- **One declaration, both sides**: `endpoint-kit/server` serves the same routes with typed,
+  validated handlers on Bun, Deno, Workers, Next.js or Hono.
 - **OpenAPI in, routes out**: `npx endpoint-kit openapi spec.json -o routes.ts` generates the
   declarations and zod schemas from an existing spec.
 - **Transport agnostic**: ships with adapters for `fetch` (default), axios and ofetch. Write your
@@ -551,9 +553,43 @@ const api = createRepository({ baseUrl: servers[0] }).mergeAll(routes).build();
 What is covered: `components.schemas` (with recursion via zod getters and `$ref` ordering),
 path and query parameters, JSON, multipart and form request bodies, the first 2xx response as
 `json`, `text`, `blob`, `none` or `sse`, `summary`/`description`/`deprecated` as JSDoc,
-`servers`. Header parameters and error response schemas are reported as warnings and left to
-you (`headers` at call time, `errors` on the route). The generator is also available
-programmatically from `endpoint-kit/openapi` as `generateFromOpenApi(document, options)`.
+`servers`, and 4xx/5xx responses: one `TaggedError` class per status (`NotFoundError`,
+`UnauthorizedError`, `Http418Error`...) plus an `errors` map on each route, with `data` typed
+from the response schema when there is one. Header parameters are reported as warnings and left
+to `headers` at call time. The generator is also available programmatically from
+`endpoint-kit/openapi` as `generateFromOpenApi(document, options)`; pass `--no-errors` /
+`emitErrors: false` to skip the error classes.
+
+## Share routes with the backend
+
+The same declarations can serve the API. `endpoint-kit/server` turns routes plus one handler
+per route into a standard `(request: Request) => Promise<Response>`: params, query and body
+are validated with the route schemas on the way in, the return value with `response` on the
+way out.
+
+```ts
+import { createFetchHandler, reply } from 'endpoint-kit/server';
+
+const handler = createFetchHandler(routes, {
+  getUser: async ({ params }) =>
+    (await db.users.find(params.id)) ?? reply(404, { message: 'no such user' }),
+  //                   ^? { id: number }  (schema output)
+  createUser: async ({ body }) => reply(201, await db.users.create(body)),
+  listUsers: async ({ query }) => db.users.list(query),
+});
+
+export default { fetch: handler }; // Bun, Deno, Cloudflare Workers
+export const GET = handler,
+  POST = handler; // Next.js route handlers
+app.all('*', (c) => handler(c.req.raw)); // Hono, or registerHono(app, routes, handlers)
+```
+
+Handlers return the response body, a `reply(status, body?, headers?)`, or a raw `Response`;
+throwing a `reply(...)` works too. Invalid input answers 400 with the schema issues, an invalid
+return value answers 500, unknown paths 404 and wrong methods 405 with an `Allow` header. Query
+and form values arrive as strings, so validation retries with numbers and booleans coerced when
+the first pass fails; shared `z.number()` schemas just work. `basePath`, `querySerializer`
+and `onError` are the options.
 
 ## Guides
 

@@ -10,6 +10,7 @@ export default defineConfig([
       'ofetch/index': 'src/adapters/ofetch.ts',
       'testing/index': 'src/testing.ts',
       'tanstack-query/index': 'src/tanstack-query.ts',
+      'server/index': 'src/server/index.ts',
     },
     format: ['esm', 'cjs'],
     dts: true,

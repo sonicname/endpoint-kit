@@ -53,6 +53,10 @@ const petstore: OpenApiDocument = {
           '200': {
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Pet' } } },
           },
+          '404': {
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Problem' } } },
+          },
+          '401': { description: 'no body' },
         },
       },
       delete: { responses: { '204': { description: 'deleted' } } },
@@ -109,6 +113,11 @@ const petstore: OpenApiDocument = {
       Pets: { type: 'array', items: { $ref: '#/components/schemas/Pet' }, maxItems: 100 },
       Mixed: { oneOf: [{ type: 'string' }, { type: 'number' }], description: 'string or number' },
       Dict: { type: 'object', additionalProperties: { type: 'number' } },
+      Problem: {
+        type: 'object',
+        required: ['message'],
+        properties: { message: { type: 'string' } },
+      },
     },
   },
 };
@@ -144,13 +153,27 @@ describe('generateFromOpenApi', () => {
   const result = generateFromOpenApi(petstore, { importFrom: '../../src/index.js' });
 
   it('emits schemas in dependency order with getters for references', () => {
-    expect(result.schemas).toEqual(['Pet', 'NewPet', 'Pets', 'Mixed', 'Dict']);
+    expect(result.schemas).toEqual(['Pet', 'NewPet', 'Pets', 'Mixed', 'Dict', 'Problem']);
     expect(result.code).toContain('get parent() { return Pet.optional(); }');
     expect(result.code).toContain('"odd-key": z.boolean().default(false)');
     expect(result.code).toContain('export type Pet = z.infer<typeof Pet>;');
     expect(result.code).toContain(
       'export const servers = ["https://petstore.example.com/v1"] as const;',
     );
+  });
+
+  it('emits error classes and per-route errors maps', () => {
+    expect(result.code).toContain('import { createRoute, TaggedError, errorFromSchema } from');
+    expect(result.code).toContain(
+      'export class NotFoundError<TData = unknown> extends TaggedError<"NotFoundError">',
+    );
+    expect(result.code).toContain('export class UnauthorizedError<TData = unknown>');
+    expect(result.code).toContain(
+      'errors: { 401: (ctx) => new UnauthorizedError(ctx.data, ctx), 404: errorFromSchema(Problem, (data, ctx) => new NotFoundError(data, ctx)) }',
+    );
+    const without = generateFromOpenApi(petstore, { emitErrors: false });
+    expect(without.code).not.toContain('TaggedError');
+    expect(without.code).not.toContain('errors:');
   });
 
   it('emits one route per operation with inferred names and warnings', () => {
@@ -217,6 +240,23 @@ describe('generateFromOpenApi', () => {
 
     const tooMany = await list({ query: { limit: 1000 } });
     expect((tooMany.error as { _tag: string } | null)?._tag).toBe('ValidationError');
+
+    const notFound = createRepository({
+      baseUrl: 'https://petstore.example.com/v1',
+      adapter: {
+        request: () =>
+          Promise.resolve({ status: 404, statusText: '', headers: {}, data: { message: 'gone' } }),
+      },
+    })
+      .mergeAll(generated.routes)
+      .build();
+    const show = notFound['showPetById'] as unknown as (
+      input: unknown,
+    ) => Promise<{ error: { _tag: string; data: unknown; status: number } | null }>;
+    const { error: showError } = await show({ params: { petId: 1 } });
+    expect(showError?._tag).toBe('NotFoundError');
+    expect(showError?.status).toBe(404);
+    expect(showError?.data).toEqual({ message: 'gone' });
   });
 });
 

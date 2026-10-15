@@ -380,6 +380,39 @@ export type RouteQuery<R extends AnyRoute> = InputOf<R['query']>;
 /** Body accepted by a route, or `never` when it has no body schema. */
 export type RouteBody<R extends AnyRoute> = InputOf<R['body']>;
 
+// --- Output (server side) types -------------------------------------------
+
+/** Path params after validation: schema outputs, or strings for params without a schema. */
+export type RouteParamsOutput<R extends AnyRoute> = [NonNullable<R['params']>] extends [never]
+  ? { [K in PathParamNames<R['path']>]: string }
+  : NonNullable<R['params']> extends AnySchema
+    ? Simplify<
+        StandardSchemaV1.InferOutput<NonNullable<R['params']>> & {
+          [
+            K in Exclude<
+              PathParamNames<R['path']>,
+              keyof StandardSchemaV1.InferOutput<NonNullable<R['params']>>
+            >
+          ]: string;
+        }
+      >
+    : {
+        [K in PathParamNames<R['path']>]: K extends keyof NonNullable<R['params']>
+          ? NonNullable<NonNullable<R['params']>[K]> extends AnySchema
+            ? StandardSchemaV1.InferOutput<NonNullable<NonNullable<R['params']>[K]>>
+            : string
+          : string;
+      };
+
+/** Query after validation, `undefined` when the route has no query schema. */
+export type RouteQueryOutput<R extends AnyRoute> = OutputOf<R['query'], undefined>;
+
+/** Body after validation, `undefined` when the route has no body schema. */
+export type RouteBodyOutput<R extends AnyRoute> = OutputOf<R['body'], undefined>;
+
+/** What a server handler must return: the response schema *input*, or `unknown` without one. */
+export type RouteResponseInput<R extends AnyRoute> = InputOf<R['response'], unknown>;
+
 /** Options every call accepts in addition to params/query/body. */
 export interface CallOptions {
   /** Extra headers merged over repository and route headers. */

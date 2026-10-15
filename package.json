@@ -91,6 +91,16 @@
         "default": "./dist/tanstack-query/index.cjs"
       }
     },
+    "./server": {
+      "import": {
+        "types": "./dist/server/index.d.ts",
+        "default": "./dist/server/index.js"
+      },
+      "require": {
+        "types": "./dist/server/index.d.cts",
+        "default": "./dist/server/index.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/index.cjs",
@@ -188,6 +198,9 @@
       ],
       "tanstack-query": [
         "./dist/tanstack-query/index.d.ts"
+      ],
+      "server": [
+        "./dist/server/index.d.ts"
       ]
     }
   },

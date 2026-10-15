@@ -15,6 +15,7 @@ Options:
   --import-from <module>  Module to import createRoute from (default: endpoint-kit)
   --zod-from <module>     Module to import z from (default: zod)
   --no-types              Do not emit "export type X = z.infer<typeof X>"
+  --no-errors             Do not emit error classes and per-route "errors" maps
   -h, --help              Show this help
 
 YAML specs need the "yaml" package installed (npm i -D yaml).
@@ -28,6 +29,7 @@ interface CliArgs {
   importFrom: string | undefined;
   zodFrom: string | undefined;
   types: boolean;
+  errors: boolean;
   help: boolean;
 }
 
@@ -40,6 +42,7 @@ export function parseArgs(argv: readonly string[]): CliArgs {
     importFrom: undefined,
     zodFrom: undefined,
     types: true,
+    errors: true,
     help: false,
   };
   const positional: string[] = [];
@@ -70,6 +73,9 @@ export function parseArgs(argv: readonly string[]): CliArgs {
         break;
       case '--no-types':
         args.types = false;
+        break;
+      case '--no-errors':
+        args.errors = false;
         break;
       default:
         if (arg.startsWith('-')) throw new Error(`Unknown option ${arg}`);
@@ -125,6 +131,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     importFrom: args.importFrom ?? 'endpoint-kit',
     zodFrom: args.zodFrom ?? 'zod',
     emitTypes: args.types,
+    emitErrors: args.errors,
   });
 
   for (const warning of result.warnings) process.stderr.write(`warning: ${warning}\n`);
