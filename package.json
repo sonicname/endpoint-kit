@@ -12,7 +12,11 @@
     "fetch",
     "axios",
     "ofetch",
-    "type-safe"
+    "type-safe",
+    "openapi",
+    "codegen",
+    "pagination",
+    "sse"
   ],
   "homepage": "https://github.com/sonicname/api-repositories#readme",
   "bugs": {
@@ -35,6 +39,16 @@
       "require": {
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
+      }
+    },
+    "./openapi": {
+      "import": {
+        "types": "./dist/openapi/index.d.ts",
+        "default": "./dist/openapi/index.js"
+      },
+      "require": {
+        "types": "./dist/openapi/index.d.cts",
+        "default": "./dist/openapi/index.cjs"
       }
     },
     "./package.json": "./package.json"
@@ -114,5 +128,15 @@
     "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.3",
     "zod": "^4.6.5"
+  },
+  "bin": {
+    "endpoint-kit": "./dist/cli.js"
+  },
+  "typesVersions": {
+    "*": {
+      "openapi": [
+        "./dist/openapi/index.d.ts"
+      ]
+    }
   }
 }

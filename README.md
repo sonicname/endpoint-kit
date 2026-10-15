@@ -12,6 +12,8 @@ Declare your backend endpoints once, get a fully typed API client.
   schema input types, the result is the response schema output type.
 - **Organised**: `createRoute.get('/path', {...})` shorthands and `groupRoutes` to prefix and
   share settings across a set of routes.
+- **OpenAPI in, routes out**: `npx endpoint-kit openapi spec.json -o routes.ts` generates the
+  declarations and zod schemas from an existing spec.
 - **Transport agnostic**: ships with adapters for `fetch` (default), axios and ofetch. Write your
   own in a few lines.
 - **Validated at runtime**: bad inputs are rejected before the request is sent, unexpected
@@ -513,6 +515,42 @@ type GetUserInput = RouteInput<typeof getUser>;
 type GetUserOutput = RouteOutput<typeof getUser>;
 type GetUserError = RouteFailure<typeof getUser>;
 ```
+
+## Generate routes from OpenAPI
+
+Already have a spec? Generate the route declarations and zod schemas instead of writing them:
+
+```bash
+npx endpoint-kit openapi ./openapi.json -o src/api/routes.generated.ts
+# YAML specs work too once "yaml" is installed: npm i -D yaml
+```
+
+The output is plain endpoint-kit code you can read, commit and wrap:
+
+```ts
+// src/api/routes.generated.ts (excerpt)
+export const Pet = z.object({ id: z.number().int(), name: z.string(), get parent() { return Pet.optional(); } });
+export type Pet = z.infer<typeof Pet>;
+
+export const routes = {
+  /** List all pets */
+  listPets: createRoute.get('/pets', { query: z.object({ limit: z.number().int().max(100).optional() }), response: Pets }),
+  showPetById: createRoute.get('/pets/:petId', { params: { petId: z.number().int() }, response: Pet }),
+  uploadPhoto: createRoute.post('/pets/:petId/photo', { bodyType: 'multipart', body: ..., responseType: 'text' }),
+};
+```
+
+```ts
+import { routes, servers } from './routes.generated';
+const api = createRepository({ baseUrl: servers[0] }).mergeAll(routes).build();
+```
+
+What is covered: `components.schemas` (with recursion via zod getters and `$ref` ordering),
+path and query parameters, JSON, multipart and form request bodies, the first 2xx response as
+`json`, `text`, `blob`, `none` or `sse`, `summary`/`description`/`deprecated` as JSDoc,
+`servers`. Header parameters and error response schemas are reported as warnings and left to
+you (`headers` at call time, `errors` on the route). The generator is also available
+programmatically from `endpoint-kit/openapi` as `generateFromOpenApi(document, options)`.
 
 ## Guides
 

@@ -8,6 +8,7 @@ docs/
 
 # Tests
 coverage/
+tests/.generated/
 
 # Env
 .env
