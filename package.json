@@ -71,6 +71,26 @@
         "default": "./dist/ofetch/index.cjs"
       }
     },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing/index.d.ts",
+        "default": "./dist/testing/index.js"
+      },
+      "require": {
+        "types": "./dist/testing/index.d.cts",
+        "default": "./dist/testing/index.cjs"
+      }
+    },
+    "./tanstack-query": {
+      "import": {
+        "types": "./dist/tanstack-query/index.d.ts",
+        "default": "./dist/tanstack-query/index.js"
+      },
+      "require": {
+        "types": "./dist/tanstack-query/index.d.cts",
+        "default": "./dist/tanstack-query/index.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/index.cjs",
@@ -162,7 +182,21 @@
       ],
       "ofetch": [
         "./dist/ofetch/index.d.ts"
+      ],
+      "testing": [
+        "./dist/testing/index.d.ts"
+      ],
+      "tanstack-query": [
+        "./dist/tanstack-query/index.d.ts"
       ]
+    }
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "@tanstack/react-query": {
+      "optional": true
     }
   }
 }

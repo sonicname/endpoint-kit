@@ -1,46 +1,20 @@
 # Testing
 
-Two strategies, both without touching the network. Full source:
-[`examples/testing.ts`](../examples/testing.ts).
+Two strategies, both without touching the network.
 
 ## 1. Swap the adapter
 
-The adapter is the only thing that talks HTTP. A scripted one keeps every other layer
-(validation, params, middlewares, custom errors) exercised exactly as in production.
+The adapter is the only thing that talks HTTP. `mockAdapter` from `endpoint-kit/testing`
+answers from a lookup table and records every request, so validation, params, middlewares and
+custom errors run exactly as in production.
 
 ```ts
-import type { Adapter, AdapterRequest, AdapterResponse } from 'endpoint-kit';
+import { mockAdapter } from 'endpoint-kit/testing';
 
-export function mockAdapter(
-  handlers: Record<string, (request: AdapterRequest) => unknown>,
-): Adapter & { calls: AdapterRequest[] } {
-  const calls: AdapterRequest[] = [];
-  return {
-    calls,
-    request: (request) => {
-      calls.push(request);
-      const url = new URL(request.url);
-      const handler = handlers[`${request.method} ${url.pathname}`];
-      if (!handler)
-        return Promise.resolve({ status: 404, statusText: 'Not Found', headers: {}, data: null });
-      const answer = handler(request);
-      const response: AdapterResponse =
-        answer !== null && typeof answer === 'object' && 'status' in answer
-          ? { status: 200, statusText: '', headers: {}, data: null, ...(answer as object) }
-          : { status: 200, statusText: '', headers: {}, data: answer };
-      return Promise.resolve(response);
-    },
-  };
-}
-```
-
-Build the client from the same route definitions as production, only the adapter differs.
-Turn retries and timeouts off so tests are deterministic:
-
-```ts
 const adapter = mockAdapter({
-  'GET /users/octocat': () => ({ id: 1, login: 'octocat', name: null }),
+  'GET /users/:id': (_request, { params }) => ({ id: Number(params.id), login: 'octocat' }),
   'GET /users/nobody': () => ({ status: 404, data: { message: 'Not Found' } }),
+  'POST /users': async (request) => ({ status: 201, data: request.body }),
 });
 
 const api = createRepository({ baseUrl: 'https://api.test', adapter, retry: false, timeout: false })
@@ -54,12 +28,14 @@ it('maps 404 to NotFoundError', async () => {
 
 it('sends the auth header', async () => {
   await api.getUser({ params: { username: 'octocat' } });
-  expect(adapter.calls[0]?.headers.authorization).toMatch(/^Bearer /);
+  expect(adapter.last?.headers.authorization).toMatch(/^Bearer /);
 });
 ```
 
-Keep the factory in one place (`createTestClient` in the example) so tests do not repeat the
-repository config.
+Keys are `"METHOD /path"`; paths accept `:param` segments and a trailing `*`, `"* /path"`
+matches any method and `"*"` matches everything. A handler returns the body, or an object with
+`status`/`data`/`headers`. `adapter.calls`, `adapter.last`, `adapter.reset()` and
+`adapter.use({...})` cover the rest. Turn retries and timeouts off so tests stay deterministic.
 
 ## 2. Mock the network
 

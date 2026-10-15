@@ -142,11 +142,20 @@ export default async function Page({ params }: { params: { username: string } })
 }
 ```
 
-## Optional: `routeQuery`
+## Optional: `routeQuery` and `routeInfiniteQuery`
 
-If you would rather not hand-write keys, a 20-line helper derives them from the route and types
-the error per route instead of app-wide. It is an example, not part of the package; copy it from
-[`examples/tanstack-query.ts`](../examples/tanstack-query.ts).
+If you would rather not hand-write keys, `endpoint-kit/tanstack-query` derives them from the
+route and types the error per route instead of app-wide. `@tanstack/react-query` is an optional
+peer dependency.
+
+```ts
+import {
+  routeQuery,
+  routeInfiniteQuery,
+  routeKey,
+  routeKeyPrefix,
+} from 'endpoint-kit/tanstack-query';
+```
 
 ```tsx
 const { data } = useSuspenseQuery(
@@ -160,6 +169,14 @@ client.invalidateQueries({ queryKey: routeKeyPrefix(github.listRepos) }); // eve
 
 The helper returns `queryOptions`, so it also works with `prefetchQuery`, `getQueryData` and
 `setQueryData`, with the data type attached to the key.
+
+Routes wrapped with `paginate()` get `useInfiniteQuery` for free: the route's `next` becomes
+`getNextPageParam`, and every page param is a full route input.
+
+```tsx
+const repos = useInfiniteQuery(routeInfiniteQuery(github.listRepos, { params: { username } }));
+// repos.data.pages: Repo[][]   repos.fetchNextPage()   repos.hasNextPage
+```
 
 ## `exactOptionalPropertyTypes`
 

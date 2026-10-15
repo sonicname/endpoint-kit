@@ -19,7 +19,9 @@ import type { ReactElement } from 'react';
 import { matchError } from '../src/index.js';
 
 import { github } from './api.js';
-import { routeKeyPrefix, routeQuery } from './tanstack-query.js';
+import { routeKeyPrefix, routeQuery } from '../src/tanstack-query.js';
+
+import './query-client.js';
 
 // --- Query client ----------------------------------------------------------
 

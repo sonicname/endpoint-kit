@@ -561,12 +561,13 @@ Longer, type-checked walkthroughs live in [`guides/`](./guides/), with the full 
 snippet under [`examples/`](./examples/):
 
 - [TanStack Query](./guides/tanstack-query.md): `orThrow()` in `queryFn`, typed errors,
-  mutations and invalidation, Suspense, SSR, optional key/typing helpers.
+  mutations and invalidation, Suspense, SSR, and `endpoint-kit/tanstack-query` helpers
+  including `useInfiniteQuery` from `paginate()`.
 - [React without a data library](./guides/react.md): a `useRoute` hook with abort on unmount,
   mutations, server components.
 - [Authentication and refresh tokens](./guides/auth-refresh-token.md): token store, `headers`
   provider, refresh-on-401 middleware with single-flight refresh.
-- [Testing](./guides/testing.md): scripted adapters, MSW, testing middlewares and timers.
+- [Testing](./guides/testing.md): `mockAdapter` from `endpoint-kit/testing`, MSW, testing middlewares and timers.
 
 ## Development
 

@@ -8,6 +8,8 @@ export default defineConfig([
       // Optional adapters live on their own subpaths so the main entry stays fetch-only.
       'axios/index': 'src/adapters/axios.ts',
       'ofetch/index': 'src/adapters/ofetch.ts',
+      'testing/index': 'src/testing.ts',
+      'tanstack-query/index': 'src/tanstack-query.ts',
     },
     format: ['esm', 'cjs'],
     dts: true,
