@@ -69,10 +69,7 @@ export type { ErrorHandlers, HandlerResult, RouteError, ValidationTarget } from 
 
 export { fetchAdapter } from './adapters/fetch.js';
 export type { FetchAdapterOptions } from './adapters/fetch.js';
-export { axiosAdapter } from './adapters/axios.js';
-export type { AxiosLike } from './adapters/axios.js';
-export { ofetchAdapter } from './adapters/ofetch.js';
-export type { OfetchLike } from './adapters/ofetch.js';
+// axiosAdapter and ofetchAdapter are published as `endpoint-kit/axios` and `endpoint-kit/ofetch`.
 export type {
   Adapter,
   AdapterRequest,

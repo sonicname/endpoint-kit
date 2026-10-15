@@ -8,5 +8,15 @@
     "name": "CJS",
     "path": "dist/index.cjs",
     "limit": "8 kB"
+  },
+  {
+    "name": "axios adapter",
+    "path": "dist/axios/index.js",
+    "limit": "2 kB"
+  },
+  {
+    "name": "ofetch adapter",
+    "path": "dist/ofetch/index.js",
+    "limit": "2 kB"
   }
 ]

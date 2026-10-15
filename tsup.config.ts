@@ -2,7 +2,13 @@ import { defineConfig } from 'tsup';
 
 export default defineConfig([
   {
-    entry: { index: 'src/index.ts', 'openapi/index': 'src/openapi/index.ts' },
+    entry: {
+      index: 'src/index.ts',
+      'openapi/index': 'src/openapi/index.ts',
+      // Optional adapters live on their own subpaths so the main entry stays fetch-only.
+      'axios/index': 'src/adapters/axios.ts',
+      'ofetch/index': 'src/adapters/ofetch.ts',
+    },
     format: ['esm', 'cjs'],
     dts: true,
     sourcemap: true,

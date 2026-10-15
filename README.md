@@ -395,14 +395,17 @@ createRoute({ method: 'GET', path: '/x', middlewares: [mockInDev] });
 ```ts
 import axios from 'axios';
 import { ofetch } from 'ofetch';
-import { axiosAdapter, fetchAdapter, ofetchAdapter } from 'endpoint-kit';
+import { fetchAdapter } from 'endpoint-kit';
+import { axiosAdapter } from 'endpoint-kit/axios';
+import { ofetchAdapter } from 'endpoint-kit/ofetch';
 
 createRepository({ baseUrl, adapter: fetchAdapter() });
 createRepository({ baseUrl, adapter: axiosAdapter(axios.create({ timeout: 5000 })) });
 createRepository({ baseUrl, adapter: ofetchAdapter(ofetch.create({ retry: 2 })) });
 ```
 
-Neither axios nor ofetch is a dependency of this package. A custom adapter only needs a
+The axios and ofetch adapters live on their own subpaths so the main entry stays fetch-only;
+neither library is a dependency of this package. A custom adapter only needs a
 `request(request: AdapterRequest): Promise<AdapterResponse>` method and must not throw on
 non-2xx statuses; the repository decides what counts as a failure.
 

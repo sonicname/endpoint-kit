@@ -51,6 +51,26 @@
         "default": "./dist/openapi/index.cjs"
       }
     },
+    "./axios": {
+      "import": {
+        "types": "./dist/axios/index.d.ts",
+        "default": "./dist/axios/index.js"
+      },
+      "require": {
+        "types": "./dist/axios/index.d.cts",
+        "default": "./dist/axios/index.cjs"
+      }
+    },
+    "./ofetch": {
+      "import": {
+        "types": "./dist/ofetch/index.d.ts",
+        "default": "./dist/ofetch/index.js"
+      },
+      "require": {
+        "types": "./dist/ofetch/index.d.cts",
+        "default": "./dist/ofetch/index.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/index.cjs",
@@ -136,6 +156,12 @@
     "*": {
       "openapi": [
         "./dist/openapi/index.d.ts"
+      ],
+      "axios": [
+        "./dist/axios/index.d.ts"
+      ],
+      "ofetch": [
+        "./dist/ofetch/index.d.ts"
       ]
     }
   }

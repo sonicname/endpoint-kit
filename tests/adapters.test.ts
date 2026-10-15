@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { axiosAdapter, fetchAdapter, ofetchAdapter } from '../src/index.js';
+import { axiosAdapter } from '../src/adapters/axios.js';
+import { ofetchAdapter } from '../src/adapters/ofetch.js';
+import { fetchAdapter } from '../src/index.js';
 import type { AdapterRequest } from '../src/index.js';
 
 const baseRequest: AdapterRequest = {
