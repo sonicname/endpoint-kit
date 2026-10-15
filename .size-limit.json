@@ -1,22 +1,48 @@
 [
   {
-    "name": "ESM",
+    "name": "endpoint-kit (ESM)",
     "path": "dist/index.js",
     "limit": "8 kB"
   },
   {
-    "name": "CJS",
+    "name": "endpoint-kit (CJS)",
     "path": "dist/index.cjs",
     "limit": "8 kB"
   },
   {
-    "name": "axios adapter",
+    "name": "endpoint-kit/axios",
     "path": "dist/axios/index.js",
     "limit": "2 kB"
   },
   {
-    "name": "ofetch adapter",
+    "name": "endpoint-kit/ofetch",
     "path": "dist/ofetch/index.js",
     "limit": "2 kB"
+  },
+  {
+    "name": "endpoint-kit/testing",
+    "path": "dist/testing/index.js",
+    "limit": "2 kB"
+  },
+  {
+    "name": "endpoint-kit/tanstack-query",
+    "path": "dist/tanstack-query/index.js",
+    "limit": "4 kB"
+  },
+  {
+    "name": "endpoint-kit/server",
+    "path": "dist/server/index.js",
+    "limit": "8 kB"
+  },
+  {
+    "name": "endpoint-kit/server/node",
+    "path": "dist/server/node/index.js",
+    "limit": "12 kB",
+    "ignore": ["node:stream", "node:stream/web", "node:http", "stream", "http"]
+  },
+  {
+    "name": "endpoint-kit/openapi",
+    "path": "dist/openapi/index.js",
+    "limit": "12 kB"
   }
 ]

@@ -130,7 +130,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "rimraf dist && tsup",
     "dev": "tsup --watch",
     "clean": "rimraf dist coverage docs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p examples",

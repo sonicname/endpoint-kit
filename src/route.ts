@@ -149,7 +149,7 @@ export type ErrorsSpec = ErrorFactories | undefined;
 
 /**
  * Union of the errors produced by an {@link ErrorFactories} map, or `never` when the
- * slot is empty or unconstrained (see {@link SchemaOf} for why the latter matters).
+ * slot is empty or unconstrained (the wide default a contextually typed route gets).
  */
 export type InferErrors<E> = [NonNullable<E>] extends [never]
   ? never

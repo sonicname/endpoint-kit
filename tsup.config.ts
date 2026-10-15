@@ -11,16 +11,30 @@ export default defineConfig([
       'testing/index': 'src/testing.ts',
       'tanstack-query/index': 'src/tanstack-query.ts',
       'server/index': 'src/server/index.ts',
-      'server/node/index': 'src/server/node.ts',
     },
     format: ['esm', 'cjs'],
     dts: true,
     sourcemap: true,
-    clean: true,
+    // Cleaning is done by the build script: with several parallel configs, a clean here
+    // would delete the .d.ts files the other configs just wrote.
+    clean: false,
     splitting: false,
     treeshake: true,
     minify: false,
     target: 'es2022',
+    outDir: 'dist',
+  },
+  {
+    // Node-only entry: platform node keeps the `node:` import prefix.
+    entry: { 'server/node/index': 'src/server/node.ts' },
+    format: ['esm', 'cjs'],
+    dts: true,
+    sourcemap: true,
+    splitting: false,
+    treeshake: true,
+    target: 'node20',
+    platform: 'node',
+    removeNodeProtocol: false,
     outDir: 'dist',
   },
   {

@@ -1,8 +1,25 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "entryPoints": ["src/index.ts"],
+  "entryPoints": [
+    "src/index.ts",
+    "src/adapters/axios.ts",
+    "src/adapters/ofetch.ts",
+    "src/testing.ts",
+    "src/tanstack-query.ts",
+    "src/server/index.ts",
+    "src/server/node.ts",
+    "src/openapi/index.ts"
+  ],
   "out": "docs",
   "excludePrivate": true,
   "excludeInternal": true,
-  "includeVersion": true
+  "includeVersion": true,
+  "navigation": {
+    "includeGroups": true
+  },
+  "validation": {
+    "notExported": false,
+    "invalidLink": true,
+    "notDocumented": false
+  }
 }
