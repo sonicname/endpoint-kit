@@ -54,6 +54,8 @@ function toAxiosResponseType(type: AdapterRequest['responseType']): string {
       return 'arraybuffer';
     case 'none':
       return 'text';
+    case 'sse':
+      return 'stream'; // Node only: browser axios cannot stream, use fetchAdapter there
     default:
       return type;
   }

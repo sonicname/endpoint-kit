@@ -129,6 +129,8 @@ export function cacheMiddleware(
 
   return async (request, next) => {
     if (ttl <= 0 || !methods.includes(request.method)) return next(request);
+    // A stream can only be consumed once; never cache it.
+    if (request.responseType === 'stream' || request.responseType === 'sse') return next(request);
 
     const key = keyOf(request);
     const hit = await controller.storage.get(key);

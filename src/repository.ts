@@ -25,6 +25,8 @@ import type {
   Simplify,
 } from './route.js';
 import type { AnySchema, StandardSchemaV1 } from './standard-schema.js';
+import { encodeBody } from './body.js';
+import { decodeServerSentEvents } from './sse.js';
 import { buildUrl } from './url.js';
 import type { QuerySerializerSpec } from './url.js';
 
@@ -286,7 +288,12 @@ async function execute(
       signal: input.signal,
       options: { ...config.options, ...route.options, ...input.options },
     };
-    if (body !== undefined) request.body = body;
+    const encoded = encodeBody(
+      body,
+      route.bodyType,
+      route.querySerializer ?? config.querySerializer,
+    );
+    if (encoded !== undefined) request.body = encoded;
 
     const response = await buildPipeline(name, route, runtime, input)(request);
 
@@ -294,10 +301,7 @@ async function execute(
       throw await failureFor(name, route, config, response);
     }
 
-    const data =
-      config.validateResponse === false
-        ? response.data
-        : await validate(name, 'response', route.response, response.data);
+    const data = await decodeResponse(name, route, config, response.data);
 
     if (route.invalidates?.length) await runtime.cache.invalidate(...route.invalidates);
 
@@ -311,6 +315,31 @@ async function execute(
     const error = toRouteError(raw, name);
     await hooks.onError?.({ route: name, request, error });
     throw error;
+  }
+}
+
+/** Validate or wrap the parsed body depending on the route's `responseType`. */
+function decodeResponse(
+  name: string,
+  route: AnyRoute,
+  config: RepositoryConfig,
+  body: unknown,
+): Promise<unknown> {
+  switch (route.responseType) {
+    case 'stream':
+      return Promise.resolve(body);
+    case 'sse':
+      return Promise.resolve(
+        decodeServerSentEvents(
+          body as ReadableStream<Uint8Array>,
+          config.validateResponse === false ? undefined : route.response,
+          name,
+        ),
+      );
+    default:
+      return config.validateResponse === false
+        ? Promise.resolve(body)
+        : validate(name, 'response', route.response, body);
   }
 }
 

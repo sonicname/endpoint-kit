@@ -34,7 +34,12 @@ export function ofetchAdapter(instance: OfetchLike): Adapter {
         headers: request.headers,
         body: request.body,
         signal: request.signal,
-        responseType: request.responseType === 'none' ? 'text' : request.responseType,
+        responseType:
+          request.responseType === 'none'
+            ? 'text'
+            : request.responseType === 'sse'
+              ? 'stream'
+              : request.responseType,
         ignoreResponseError: true,
       });
 

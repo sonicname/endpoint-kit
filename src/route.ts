@@ -1,10 +1,12 @@
 import type { HttpMethod, ResponseType } from './adapters/types.js';
+import type { BodyType } from './body.js';
 import { ValidationError } from './errors.js';
 import type { RouteError, TaggedError } from './errors.js';
 import type { CacheOptions } from './middleware/cache.js';
 import type { RetryOptions } from './middleware/retry.js';
 import type { Middleware } from './middleware/types.js';
 import type { AnySchema, StandardSchemaV1 } from './standard-schema.js';
+import type { ServerSentEvent } from './sse.js';
 import type { QuerySerializerSpec } from './url.js';
 
 /** A schema slot: either a Standard Schema or nothing. */
@@ -177,6 +179,11 @@ export interface RouteDefinition<
   query?: TQuery;
   /** Schema validating the request body. */
   body?: TBody;
+  /**
+   * How the body is encoded: `json` (default), `multipart` (`FormData`, for `File`/`Blob`
+   * fields) or `form` (`application/x-www-form-urlencoded`).
+   */
+  bodyType?: BodyType;
   /** Schema validating (and typing) the response body. */
   response?: TResponse;
   /** Response parsing strategy, defaults to `"json"`. */
@@ -408,10 +415,19 @@ type ParsedBody<R extends AnyRoute> =
         ? ArrayBuffer
         : NonNullable<R['responseType']> extends 'none'
           ? undefined
-          : unknown;
+          : NonNullable<R['responseType']> extends 'stream'
+            ? ReadableStream<Uint8Array>
+            : unknown;
 
-/** What a successful call resolves with: the response schema output, or the raw parsed body. */
-export type RouteOutput<R extends AnyRoute> = OutputOf<R['response'], ParsedBody<R>>;
+/**
+ * What a successful call resolves with: the response schema output, or the raw parsed body.
+ * For `responseType: 'sse'` it is an async iterable of events, or of schema outputs when a
+ * `response` schema is given (each event's `data` is JSON-decoded and validated).
+ */
+export type RouteOutput<R extends AnyRoute> =
+  NonNullable<R['responseType']> extends 'sse'
+    ? AsyncIterable<OutputOf<R['response'], ServerSentEvent>>
+    : OutputOf<R['response'], ParsedBody<R>>;
 
 /** Custom errors declared on the route itself. */
 export type RouteErrors<R extends AnyRoute> = InferErrors<R['errors']>;

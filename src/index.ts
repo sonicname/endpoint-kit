@@ -102,3 +102,7 @@ export type { PolicyInput } from './policy.js';
 export type { AnySchema, StandardSchemaV1 } from './standard-schema.js';
 export { buildQueryString, buildUrl, interpolatePath, joinUrl, toStringValue } from './url.js';
 export type { QuerySerializer, QuerySerializerOptions, QuerySerializerSpec } from './url.js';
+export { encodeBody, toFormData, toFormUrlEncoded } from './body.js';
+export type { BodyType } from './body.js';
+export { decodeServerSentEvents, parseServerSentEvents } from './sse.js';
+export type { ServerSentEvent } from './sse.js';

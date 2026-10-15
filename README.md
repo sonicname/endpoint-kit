@@ -100,13 +100,42 @@ const issue = await github.createIssue({
 | `path`         | Path relative to `baseUrl`. `:name` segments become path params.                                                                                                                                                          |
 | `params`       | Path param validation: a per-key map `{ id: z.coerce.number() }` (keys are autocompleted from `path`) or a whole-object schema. Both are checked against the path at compile time. Params without a schema accept `string | number`. |
 | `query`        | Schema for the query string. `undefined` values are skipped; arrays and nested objects follow `querySerializer` (`repeat`/`brackets`/`indices`/`comma`, `json`/`brackets`/`dots`).                                        |
-| `body`         | Schema for the request body. Plain objects are JSON encoded, `FormData`/`Blob` pass through.                                                                                                                              |
+| `body`         | Schema for the request body. Encoded per `bodyType`: `json` (default), `multipart` (`FormData`, for `File`/`Blob` fields) or `form` (`application/x-www-form-urlencoded`).                                                |
 | `response`     | Schema for the response body. Its output type is what the caller resolves with.                                                                                                                                           |
-| `responseType` | `json` (default), `text`, `blob`, `arrayBuffer` or `none`.                                                                                                                                                                |
+| `responseType` | `json` (default), `text`, `blob`, `arrayBuffer`, `none`, `stream` (a `ReadableStream<Uint8Array>`) or `sse` (an `AsyncIterable` of server-sent events, validated per event when `response` is set).                       |
 | `headers`      | Static headers for this route.                                                                                                                                                                                            |
 | `options`      | Adapter specific options (axios config, ofetch options, `RequestInit`).                                                                                                                                                   |
 
 A route can be reused across several repositories.
+
+### Uploads, forms, streams and SSE
+
+```ts
+const upload = createRoute.post(/files, {
+  bodyType: multipart, // body becomes FormData; File/Blob fields are appended as files
+  body: z.object({ file: z.instanceof(Blob), title: z.string() }),
+});
+
+const login = createRoute.post(/login, {
+  bodyType: form, // application/x-www-form-urlencoded, using querySerializer rules
+  body: z.object({ user: z.string(), password: z.string() }),
+});
+
+const download = createRoute.get(/export, { responseType: stream });
+const { data: stream } = await api.download(); // ReadableStream<Uint8Array>
+
+const events = createRoute.get(/events, {
+  responseType: sse,
+  response: z.object({ type: z.string(), payload: z.unknown() }),
+});
+const { data } = await api.events();
+for await (const event of data) {
+  //            ^? { type: string; payload: unknown }, one per SSE message
+}
+```
+
+Streams and SSE responses are never cached. Upload progress is not available with `fetch`;
+pass `options: { onUploadProgress }` through the axios adapter if you need it.
 
 ### Method helpers
 

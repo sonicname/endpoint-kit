@@ -72,6 +72,16 @@ async function parseBody(
       return response.blob();
     case 'arrayBuffer':
       return response.arrayBuffer();
+    case 'stream':
+    case 'sse':
+      return (
+        response.body ??
+        new ReadableStream<Uint8Array>({
+          start: (c) => {
+            c.close();
+          },
+        })
+      );
     case 'json': {
       const text = await response.text();
       if (text === '') return undefined;

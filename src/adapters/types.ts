@@ -1,8 +1,11 @@
 /** HTTP methods supported by routes. */
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
-/** How the response body should be parsed. */
-export type ResponseType = 'json' | 'text' | 'blob' | 'arrayBuffer' | 'none';
+/**
+ * How the response body should be parsed. `stream` hands back a `ReadableStream<Uint8Array>`,
+ * `sse` parses `text/event-stream` into an async iterable of events.
+ */
+export type ResponseType = 'json' | 'text' | 'blob' | 'arrayBuffer' | 'none' | 'stream' | 'sse';
 
 /** Normalised request handed to an adapter. */
 export interface AdapterRequest {
