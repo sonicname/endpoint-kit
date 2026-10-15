@@ -128,6 +128,42 @@ export function toRouteError(error: unknown, route: string): TaggedError {
 }
 
 // ---------------------------------------------------------------------------
+// Header redaction
+// ---------------------------------------------------------------------------
+
+/** Header names (lower case) whose values are masked in errors and hooks by default. */
+export const DEFAULT_REDACTED_HEADERS: readonly string[] = [
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'x-auth-token',
+  'x-csrf-token',
+  'x-xsrf-token',
+];
+
+/** Placeholder written in place of a redacted value. */
+export const REDACTED = '[redacted]';
+
+/**
+ * Copy `headers` with sensitive values replaced by {@link REDACTED}. Names are matched case
+ * insensitively; besides `names`, anything containing `token`, `secret` or `password` is masked.
+ */
+export function redactHeaders(
+  headers: Record<string, string>,
+  names: readonly string[] = DEFAULT_REDACTED_HEADERS,
+): Record<string, string> {
+  const wanted = new Set(names.map((name) => name.toLowerCase()));
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+    out[key] = wanted.has(lower) || /token|secret|password/.test(lower) ? REDACTED : value;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // matchError
 // ---------------------------------------------------------------------------
 

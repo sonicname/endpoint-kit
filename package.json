@@ -1,6 +1,6 @@
 {
   "name": "endpoint-kit",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Declare backend endpoints once with Zod (or any Standard Schema) and get a fully typed API client for fetch, axios or ofetch",
   "keywords": [
     "typescript",
@@ -165,6 +165,7 @@
     "@vitest/coverage-v8": "^5.0.3",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
+    "hono": "^4.13.13",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
     "prettier": "^3.9.9",

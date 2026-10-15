@@ -67,7 +67,10 @@ export {
   UnknownError,
   ValidationError,
   matchError,
+  redactHeaders,
   toRouteError,
+  DEFAULT_REDACTED_HEADERS,
+  REDACTED,
 } from './errors.js';
 export type { ErrorHandlers, HandlerResult, RouteError, ValidationTarget } from './errors.js';
 

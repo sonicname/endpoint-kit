@@ -284,6 +284,7 @@ createRepository({
   querySerializer: { arrayFormat: 'brackets', objectFormat: 'brackets' }, // qs style; routes can override
   validateResponse: true, // set false to skip response schema validation
   isSuccess: (status) => status < 400, // default: 200 <= status < 300
+  redactHeaders: ['x-tenant-key'], // masked in errors and onError, on top of authorization/cookie/*token*/*secret*; false disables
   hooks: {
     onRequest: ({ route, request, attempt }) => {},
     onResponse: ({ route, request, response, attempt }) => {},
@@ -425,7 +426,10 @@ built-in ones form the `RouteError` union:
 | `NetworkError`    | `'NetworkError'`    | The transport could not reach the server. `cause` is the raw error.                    |
 | `UnknownError`    | `'UnknownError'`    | Anything else thrown (a middleware bug...). `cause` is the raw value.                  |
 
-Every error carries `route`, the name of the route that was called.
+Every error carries `route`, the name of the route that was called. Header values that look sensitive
+(`authorization`, `cookie`, anything containing `token`, `secret` or `password`) are replaced by
+`'[redacted]'` in `ApiError.headers`, in error factory contexts and in `onError`, so errors are
+safe to log. The real request is untouched. Tune it with `redactHeaders` on the repository.
 
 ### Custom errors
 

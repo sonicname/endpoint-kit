@@ -1,6 +1,6 @@
 import { fetchAdapter } from './adapters/fetch.js';
 import type { Adapter, AdapterRequest, AdapterResponse } from './adapters/types.js';
-import { ApiError, toRouteError, ValidationError } from './errors.js';
+import { ApiError, redactHeaders, toRouteError, ValidationError } from './errors.js';
 import type { RouteError, TaggedError, ValidationTarget } from './errors.js';
 import { cacheMiddleware, createCacheController } from './middleware/cache.js';
 import type { CacheController, CacheOptions, CacheStorage } from './middleware/cache.js';
@@ -88,6 +88,11 @@ export interface RepositoryConfig<TErrors extends ErrorsSpec = ErrorsSpec> {
   validateResponse?: boolean;
   /** Decide whether a status code is a success. Defaults to `200 <= status < 300`. */
   isSuccess?: (status: number) => boolean;
+  /**
+   * Header names whose values are masked in errors and in the `onError` hook, on top of the
+   * token/secret/password patterns. Defaults to `DEFAULT_REDACTED_HEADERS`; `false` disables.
+   */
+  redactHeaders?: readonly string[] | false;
   /**
    * Custom errors by HTTP status for every route, e.g.
    * `{ 401: () => new UnauthorizedError() }`. Route-level `errors` take precedence.
@@ -349,7 +354,11 @@ async function execute(
     };
   } catch (raw) {
     const error = toRouteError(raw, name);
-    await hooks.onError?.({ route: name, request, error });
+    await hooks.onError?.({
+      route: name,
+      request: request && { ...request, headers: redact(config, request.headers) },
+      error,
+    });
     throw error;
   }
 }
@@ -394,12 +403,18 @@ async function failureFor(
     return factory({
       status: response.status,
       statusText: response.statusText,
-      headers: response.headers,
+      headers: redact(config, response.headers),
       data: response.data,
       route: name,
     });
   }
-  return new ApiError(response.status, response.data, name, response.headers, response.statusText);
+  return new ApiError(
+    response.status,
+    response.data,
+    name,
+    redact(config, response.headers),
+    response.statusText,
+  );
 }
 
 /**
@@ -437,6 +452,11 @@ function hooksMiddleware(hooks: RepositoryHooks): Middleware {
     await hooks.onResponse?.({ route: context.route, request, response, attempt: context.attempt });
     return response;
   };
+}
+
+function redact(config: RepositoryConfig, headers: Record<string, string>): Record<string, string> {
+  if (config.redactHeaders === false) return headers;
+  return redactHeaders(headers, config.redactHeaders);
 }
 
 function defaultIsSuccess(status: number): boolean {
