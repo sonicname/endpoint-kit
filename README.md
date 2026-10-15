@@ -137,6 +137,38 @@ for await (const event of data) {
 Streams and SSE responses are never cached. Upload progress is not available with `fetch`;
 pass `options: { onUploadProgress }` through the axios adapter if you need it.
 
+### Pagination
+
+Wrap a route with `paginate` to get `caller.pages()` and, with an `items` extractor,
+`caller.items()`. Both are async iterables and reject with the typed error on failure.
+
+```ts
+import { paginate } from endpoint-kit;
+
+const listRepos = paginate(
+  createRoute.get(/users/:username/repos, {
+    query: z.object({ page: z.number().int().positive().optional() }),
+    response: z.array(repoSchema),
+  }),
+  {
+    // Return the input for the next page, or null when done.
+    next: ({ data, input, page }) =>
+      data.length === 0 ? null : { ...input, query: { ...input.query, page: page + 1 } },
+    items: (data) => data,
+  },
+);
+
+for await (const repo of api.listRepos.items({ params: { username: octocat } })) {
+  //             ^? Repo
+}
+for await (const page of api.listRepos.pages({ params: { username: octocat } }, { maxPages: 3 })) {
+  //             ^? Repo[]
+}
+```
+
+Cursor-based APIs work the same way: read the cursor from `data` and put it in the next
+`query`. `next` also receives `status` and `headers`, for `Link` header pagination.
+
 ### Method helpers
 
 `createRoute.get`, `.post`, `.put`, `.patch`, `.delete`, `.head` and `.options` take the path

@@ -6,6 +6,7 @@ import type { CacheOptions } from './middleware/cache.js';
 import type { RetryOptions } from './middleware/retry.js';
 import type { Middleware } from './middleware/types.js';
 import type { AnySchema, StandardSchemaV1 } from './standard-schema.js';
+import type { AnyPagination, PaginateOptions } from './pagination.js';
 import type { ServerSentEvent } from './sse.js';
 import type { QuerySerializerSpec } from './url.js';
 
@@ -210,6 +211,8 @@ export interface RouteDefinition<
   invalidates?: readonly string[];
   /** Extra middlewares for this route, run inside the repository ones. */
   middlewares?: readonly Middleware[];
+  /** Set by {@link paginate}: how to walk to the next page. Enables `caller.pages()` / `items()`. */
+  paginate?: AnyPagination;
 }
 
 /** Any route, regardless of its generics. */
@@ -459,7 +462,10 @@ export type RouteResult<TData, TError> =
     };
 
 /** Callable produced for each route of a built repository. */
-export interface RouteCaller<R extends AnyRoute, TRepoErrors = never> {
+export type RouteCaller<R extends AnyRoute, TRepoErrors = never> = RouteCallerBase<R, TRepoErrors> &
+  PaginationMethods<R>;
+
+interface RouteCallerBase<R extends AnyRoute, TRepoErrors> {
   /**
    * Perform the request. Never rejects: resolves with `{ data, error }` where `error`
    * is typed with every failure this route can produce.
@@ -470,3 +476,27 @@ export interface RouteCaller<R extends AnyRoute, TRepoErrors = never> {
   /** The route definition this caller was built from. */
   readonly definition: R;
 }
+
+/** `pages()` and `items()`, present only on routes wrapped with `paginate()`. */
+type PaginationMethods<R extends AnyRoute> = R extends { paginate: AnyPagination }
+  ? {
+      /** Fetch page after page until `next` returns `null`. Rejects with the typed error on failure. */
+      pages(...args: PaginatedArgs<R>): AsyncIterable<RouteOutput<R>>;
+    } & ([PaginatedItem<R>] extends [never]
+      ? Record<never, never>
+      : {
+          /** Like `pages()`, flattened through the `items` extractor. */
+          items(...args: PaginatedArgs<R>): AsyncIterable<PaginatedItem<R>>;
+        })
+  : Record<never, never>;
+
+/** Element type of the `items` extractor, or `never` when the route has none. */
+type PaginatedItem<R> = R extends { paginate: { items?: infer F } }
+  ? NonNullable<F> extends (data: never) => readonly (infer TItem)[]
+    ? TItem
+    : never
+  : never;
+
+type PaginatedArgs<R extends AnyRoute> = [RequiredKeys<RouteInput<R>>] extends [never]
+  ? [input?: RouteInput<R>, options?: PaginateOptions]
+  : [input: RouteInput<R>, options?: PaginateOptions];

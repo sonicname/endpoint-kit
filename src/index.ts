@@ -44,6 +44,13 @@ export type {
   RepositoryHooks,
 } from './repository.js';
 
+export { paginate } from './pagination.js';
+export type {
+  AnyPagination,
+  PaginateOptions,
+  Pagination,
+  PaginationContext,
+} from './pagination.js';
 export { groupRoutes } from './group.js';
 export type { GroupOptions, GroupedRoutes, PrefixedRoute } from './group.js';
 

@@ -9,6 +9,7 @@ import type { RetryOptions } from './middleware/retry.js';
 import { timeoutMiddleware } from './middleware/timeout.js';
 import { composeMiddlewares } from './middleware/types.js';
 import type { Middleware, MiddlewareContext } from './middleware/types.js';
+import type { PaginateOptions } from './pagination.js';
 import { resolvePolicy, resolveTimeout } from './policy.js';
 import type {
   AnyRoute,
@@ -241,7 +242,42 @@ function createCaller<R extends AnyRoute>(
   const orThrow = (...args: RouteArgs<R>): Promise<RouteOutput<R>> =>
     run(args).then((response) => response.data as RouteOutput<R>);
 
-  return Object.assign(caller, { orThrow, definition: route });
+  const extras: Record<string, unknown> = { orThrow, definition: route };
+  const pagination = route.paginate;
+  if (pagination) {
+    const pages = async function* (
+      input?: LooseInput,
+      options?: PaginateOptions,
+    ): AsyncGenerator<unknown, void, undefined> {
+      let current: LooseInput = input ?? {};
+      const max = options?.maxPages ?? Infinity;
+      for (let page = 1; page <= max; page++) {
+        const result = await execute(name, route, runtime, current);
+        yield result.data;
+        const next = (pagination.next as (context: unknown) => LooseInput | null | undefined)({
+          data: result.data,
+          input: current,
+          page,
+          status: result.status,
+          headers: result.headers,
+        });
+        if (next === null || next === undefined) return;
+        current = next;
+      }
+    };
+    extras['pages'] = pages;
+    if (pagination.items) {
+      const extract = pagination.items as (data: unknown) => readonly unknown[];
+      extras['items'] = async function* (
+        input?: LooseInput,
+        options?: PaginateOptions,
+      ): AsyncGenerator<unknown, void, undefined> {
+        for await (const page of pages(input, options)) yield* extract(page);
+      };
+    }
+  }
+
+  return Object.assign(caller, extras) as unknown as RouteCaller<R>;
 }
 
 interface LooseInput {
@@ -326,6 +362,8 @@ function decodeResponse(
   body: unknown,
 ): Promise<unknown> {
   switch (route.responseType) {
+    case 'none':
+      return Promise.resolve(undefined);
     case 'stream':
       return Promise.resolve(body);
     case 'sse':
@@ -412,7 +450,13 @@ async function validate(
   value: unknown,
 ): Promise<unknown> {
   if (!schema) return value;
-  const result = await schema['~standard'].validate(value);
+  // An omitted params/query/body is validated as `{}` so all-optional schemas pass and
+  // defaults apply. Response bodies keep `undefined` (204, `responseType: 'none'`).
+  const subject =
+    value === undefined && (target === 'params' || target === 'query' || target === 'body')
+      ? {}
+      : value;
+  const result = await schema['~standard'].validate(subject);
   if (result.issues) {
     throw new ValidationError(target, result.issues, routeName);
   }
