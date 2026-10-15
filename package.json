@@ -117,8 +117,7 @@
   },
   "packageManager": "pnpm@12.9.1",
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "scripts": {
     "build": "tsup",
