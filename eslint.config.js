@@ -50,6 +50,8 @@ export default tseslint.config(
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/unbound-method': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
+      // Async generators without await stand in for real event sources.
+      '@typescript-eslint/require-await': 'off',
     },
   },
   eslintConfigPrettier,

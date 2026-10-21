@@ -223,8 +223,12 @@ export function matchError<E extends TaggedError, const H extends ErrorHandlers<
 // Internals
 // ---------------------------------------------------------------------------
 
+/** Duck-typed: the error may come from another copy of this module (another entry or build). */
 function isTaggedError(value: unknown): value is TaggedError {
-  return value instanceof TaggedError;
+  return (
+    value instanceof TaggedError ||
+    (value instanceof Error && typeof (value as { _tag?: unknown })._tag === 'string')
+  );
 }
 
 function isAbort(error: unknown): boolean {

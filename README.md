@@ -600,6 +600,15 @@ the first pass fails; shared `z.number()` schemas just work (`coerce: false` tur
 a schema must tell `"12"` from `12`). `basePath`, `querySerializer`, `errorStatus` and
 `onError` are the other options.
 
+A handler for an `sse` route may return an async generator: each event it yields is validated
+against `response` and sent as a `data:` line.
+
+When a framework already matched the request (React Router loaders, Hono routes...),
+`handleRoute(name, route, handler, { request, params }, options)` validates and answers that
+one route without matching again, and `errorToResponse(error, { route, request }, options)`
+maps an error the same way the handlers do. `createFetchHandler` is matching plus
+`handleRoute`.
+
 For Node.js, Express and Connect use `endpoint-kit/server/node`:
 
 ```ts

@@ -1,10 +1,20 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
 
-import { createRepository, createRoute, fetchAdapter, groupRoutes } from '../src/index.js';
 import {
+  TaggedError,
+  ValidationError,
+  createRepository,
+  createRoute,
+  fetchAdapter,
+  groupRoutes,
+} from '../src/index.js';
+import {
+  HttpReply,
   coercePrimitives,
   createFetchHandler,
+  errorToResponse,
+  handleRoute,
   matchRoute,
   parseQuery,
   registerHono,
@@ -247,5 +257,166 @@ describe('registerHono', () => {
     const fn = app.on('GET', '/api/users/:id', (c) => handler(c.req.raw));
     const res = await fn({ req: { raw: new Request('https://x/users/1') } });
     expect(res.status).toBe(200);
+  });
+});
+
+describe('handleRoute', () => {
+  const ticks = createRoute.get('/ticks', {
+    query: z.object({ count: z.number().int() }),
+    response: z.object({ n: z.number() }),
+    responseType: 'sse',
+  });
+  const call = (request: Request, params: Record<string, string | undefined> = {}) =>
+    handleRoute('getUser', routes.getUser, ({ params }) => db.get(params.id) ?? reply(404), {
+      request,
+      params,
+    });
+
+  it('validates an already matched request and answers like createFetchHandler', async () => {
+    const ok = await call(new Request('https://x/anything'), { id: '1' });
+    expect(await ok.json()).toEqual({ id: 1, name: 'Ann' });
+    expect((await call(new Request('https://x/anything'), { id: '99' })).status).toBe(404);
+    const bad = await call(new Request('https://x/anything'), { id: 'abc' });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({ error: 'ValidationError', target: 'params' });
+    expect((await call(new Request('https://x/anything'))).status).toBe(400);
+  });
+
+  it('names the route in validation errors and onError', async () => {
+    const res = await handleRoute(
+      'boom',
+      routes.motd,
+      () => {
+        throw new Error('x');
+      },
+      { request: new Request('https://x/motd'), params: {} },
+      { onError: (_error, context) => new Response(context.route, { status: 503 }) },
+    );
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe('boom');
+  });
+
+  it('encodes an async iterable as server-sent events, validating each event', async () => {
+    const res = await handleRoute(
+      'ticks',
+      ticks,
+      async function* ({ query }) {
+        for (let n = 1; n <= query.count; n++) yield { n };
+        yield { n: 'x' } as never;
+      },
+      { request: new Request('https://x/ticks?count=2'), params: {} },
+    );
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    expect(decoder.decode((await reader.read()).value)).toBe('data: {"n":1}\n\n');
+    expect(decoder.decode((await reader.read()).value)).toBe('data: {"n":2}\n\n');
+    await expect(reader.read()).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('closes the generator when the client cancels and passes streams through', async () => {
+    let finished = false;
+    const res = await handleRoute(
+      'ticks',
+      ticks,
+      async function* () {
+        try {
+          yield { n: 1 };
+          yield { n: 2 };
+        } finally {
+          finished = true;
+        }
+      },
+      { request: new Request('https://x/ticks?count=1'), params: {} },
+      { validateResponse: false },
+    );
+    const reader = res.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    expect(finished).toBe(true);
+
+    const raw = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: 1\n\n'));
+        controller.close();
+      },
+    });
+    const passthrough = await handleRoute('ticks', ticks, () => raw as never, {
+      request: new Request('https://x/ticks?count=1'),
+      params: {},
+    });
+    expect(await passthrough.text()).toBe('data: 1\n\n');
+  });
+});
+
+describe('errorToResponse and HttpReply.toResponse', () => {
+  class Teapot extends TaggedError<'Teapot'> {
+    readonly _tag = 'Teapot';
+    readonly status = 418;
+  }
+  const context = { route: 'r', request: new Request('https://x/') };
+
+  it('maps replies, validation errors, tagged errors and the rest', async () => {
+    expect((await errorToResponse(reply(401, { m: 1 }), context)).status).toBe(401);
+    const invalid = await errorToResponse(new ValidationError('response', [], 'r'), context);
+    expect(invalid.status).toBe(500);
+    const tagged = await errorToResponse(new Teapot('short'), context);
+    expect(tagged.status).toBe(418);
+    expect(await tagged.json()).toEqual({ error: 'Teapot', message: 'short' });
+    expect((await errorToResponse(new Error('x'), context)).status).toBe(500);
+    const custom = await errorToResponse(new Error('x'), context, {
+      onError: () => new Response(null, { status: 599 }),
+    });
+    expect(custom.status).toBe(599);
+  });
+
+  it('turns a reply into a Response by body type', async () => {
+    expect(new HttpReply(204).toResponse().status).toBe(204);
+    const text = new HttpReply(200, 'hi', { 'x-a': '1' }).toResponse();
+    expect(await text.text()).toBe('hi');
+    expect(text.headers.get('x-a')).toBe('1');
+    const json = new HttpReply(201, { a: 1 }).toResponse();
+    expect(json.headers.get('content-type')).toContain('application/json');
+    expect(await json.json()).toEqual({ a: 1 });
+    expect(await new HttpReply(200, new Blob(['b'])).toResponse().text()).toBe('b');
+  });
+});
+
+describe('errors and replies from another copy of endpoint-kit', () => {
+  // The main entry and the server entry are separate bundles, so a route error class imported
+  // from 'endpoint-kit' is not `instanceof` the server's TaggedError. Detection is duck-typed.
+  class Foreign extends Error {
+    readonly _tag = 'Foreign';
+    readonly status = 402;
+  }
+  class ForeignValidation extends Error {
+    readonly _tag = 'ValidationError';
+    readonly target = 'body';
+    readonly issues = [{ message: 'nope' }];
+  }
+  const REPLY_BRAND = Symbol.for('endpoint-kit.reply');
+  class ForeignReply {
+    readonly [REPLY_BRAND] = true;
+    constructor(readonly status: number) {}
+    toResponse(): Response {
+      return new Response(null, { status: this.status });
+    }
+  }
+  const context = { route: 'r', request: new Request('https://x/') };
+
+  it('are recognised by errorToResponse and handlers', async () => {
+    expect((await errorToResponse(new Foreign('pay'), context)).status).toBe(402);
+    const invalid = await errorToResponse(new ForeignValidation('bad'), context);
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: 'ValidationError', target: 'body' });
+    expect((await errorToResponse(new ForeignReply(418), context)).status).toBe(418);
+    expect(HttpReply.is(new ForeignReply(1))).toBe(true);
+    expect(HttpReply.is({ status: 1 })).toBe(false);
+
+    const returned = await handleRoute('motd', routes.motd, () => new ForeignReply(417) as never, {
+      request: new Request('https://x/motd'),
+      params: {},
+    });
+    expect(returned.status).toBe(417);
   });
 });

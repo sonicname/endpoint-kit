@@ -16,6 +16,9 @@
  * app.all('*', (c) => handler(c.req.raw));
  * ```
  *
+ * When another router already matched the request (React Router, Hono's own routes...),
+ * {@link handleRoute} validates and answers one route without matching again.
+ *
  * @packageDocumentation
  */
 import { TaggedError, ValidationError } from '../errors.js';
@@ -47,13 +50,42 @@ export interface HandlerContext<R extends AnyRoute> {
   route: string;
 }
 
+/**
+ * Marks replies across copies of this module (ESM and CJS builds, or several bundles), where
+ * `instanceof` would fail.
+ */
+const REPLY = Symbol.for('endpoint-kit.reply');
+
 /** An explicit status/body/headers answer, see {@link reply}. */
 export class HttpReply {
+  /** @internal */
+  readonly [REPLY] = true;
+
   constructor(
     readonly status: number,
     readonly body?: unknown,
     readonly headers: Record<string, string> = {},
   ) {}
+
+  /** Whether `value` is a reply, even one created by another copy of `endpoint-kit/server`. */
+  static is(value: unknown): value is HttpReply {
+    return typeof value === 'object' && value !== null && REPLY in value;
+  }
+
+  /** The `Response` this reply stands for: JSON unless the body is a string, Blob, stream or buffer. */
+  toResponse(): Response {
+    const { status, body, headers } = this;
+    if (body === undefined || body === null) return new Response(null, { status, headers });
+    if (
+      typeof body === 'string' ||
+      body instanceof Blob ||
+      body instanceof ReadableStream ||
+      body instanceof ArrayBuffer
+    ) {
+      return new Response(body, { status, headers });
+    }
+    return json(status, body, headers);
+  }
 }
 
 /** Answer with a specific status, optional body and headers. Throwing one works too. */
@@ -106,6 +138,13 @@ export interface RouteMatch<TRoutes extends RouteMap> {
   name: keyof TRoutes & string;
   route: TRoutes[keyof TRoutes];
   params: Record<string, string>;
+}
+
+/** A request another router (React Router, Hono, ...) already matched to a route. */
+export interface MatchedRequest {
+  request: Request;
+  /** Raw path params, as the router extracted them. */
+  params: Readonly<Record<string, string | undefined>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,7 +218,6 @@ export function createFetchHandler<TRoutes extends RouteMap>(
 ): (request: Request) => Promise<Response> {
   const compiled = Object.entries(routes).map(([name, route]) => compile(name, route));
   const basePath = options.basePath ?? '';
-  const coerce = options.coerce !== false;
 
   return async (request) => {
     const url = new URL(request.url);
@@ -209,54 +247,84 @@ export function createFetchHandler<TRoutes extends RouteMap>(
 
     const { entry, params } = matched;
     const handler = handlers[entry.name as keyof TRoutes] as RouteHandler<AnyRoute>;
-
-    try {
-      const context: HandlerContext<AnyRoute> = {
-        params: await validateParams(entry, params, coerce),
-        query: (await validateLenient(
-          'query',
-          entry.route.query,
-          parseQuery(url.searchParams, options.querySerializer),
-          entry.name,
-          coerce,
-        )) as never,
-        body: (await validateLenient(
-          'body',
-          entry.route.body,
-          await readBody(request),
-          entry.name,
-          coerce,
-        )) as never,
-        headers: (isSchema(entry.route.headers)
-          ? await validateLenient(
-              'headers',
-              entry.route.headers,
-              Object.fromEntries(request.headers),
-              entry.name,
-              coerce,
-            )
-          : request.headers) as never,
-        request,
-        route: entry.name,
-      };
-
-      const result = await handler(context);
-      return await toResponse(result, entry, options);
-    } catch (error) {
-      if (error instanceof HttpReply) return replyToResponse(error);
-      if (error instanceof ValidationError) {
-        const status = error.target === 'response' ? 500 : 400;
-        return json(status, {
-          error: 'ValidationError',
-          target: error.target,
-          issues: error.issues,
-        });
-      }
-      if (isTaggedError(error)) return taggedErrorResponse(error, options);
-      if (options.onError) return options.onError(error, { route: entry.name, request });
-      return json(500, { error: 'InternalServerError' });
-    }
+    return handleRoute(entry.name, entry.route, handler, { request, params }, options);
   };
+}
+
+/**
+ * Handle one request for a route that is already matched: validate params, query, body and
+ * headers, run the handler, turn what it returns or throws into a `Response`.
+ * {@link createFetchHandler} is route matching plus this; call it directly from a framework
+ * that routes requests itself (React Router loaders, Hono handlers, ...).
+ *
+ * ```ts
+ * export const loader = ({ request, params }) =>
+ *   handleRoute('getUser', routes.getUser, ({ params }) => db.users.find(params.id), { request, params });
+ * ```
+ */
+export async function handleRoute<R extends AnyRoute>(
+  name: string,
+  route: R,
+  handler: RouteHandler<R>,
+  { request, params }: MatchedRequest,
+  options: ServerOptions = {},
+): Promise<Response> {
+  const coerce = options.coerce !== false;
+  try {
+    const context: HandlerContext<AnyRoute> = {
+      params: await validateParams(name, route, params, coerce),
+      query: (await validateLenient(
+        'query',
+        route.query,
+        parseQuery(new URL(request.url).searchParams, options.querySerializer),
+        name,
+        coerce,
+      )) as never,
+      body: (await validateLenient(
+        'body',
+        route.body,
+        await readBody(request),
+        name,
+        coerce,
+      )) as never,
+      headers: (isSchema(route.headers)
+        ? await validateLenient(
+            'headers',
+            route.headers,
+            Object.fromEntries(request.headers),
+            name,
+            coerce,
+          )
+        : request.headers) as never,
+      request,
+      route: name,
+    };
+
+    const result = await (handler as RouteHandler<AnyRoute>)(context);
+    return await toResponse(result, name, route, options);
+  } catch (error) {
+    return errorToResponse(error, { route: name, request }, options);
+  }
+}
+
+/**
+ * The response for an error thrown while handling a route, as {@link createFetchHandler} sends
+ * it: a thrown {@link reply} as is, a `ValidationError` as 400 (or 500 for the response), a
+ * `TaggedError` with its status, anything else through `onError` or as a 500.
+ */
+export async function errorToResponse(
+  error: unknown,
+  context: { route: string; request: Request },
+  options: ServerOptions = {},
+): Promise<Response> {
+  if (HttpReply.is(error)) return error.toResponse();
+  if (isValidationError(error)) {
+    const status = error.target === 'response' ? 500 : 400;
+    return json(status, { error: 'ValidationError', target: error.target, issues: error.issues });
+  }
+  if (isTaggedError(error)) return taggedErrorResponse(error, options);
+  if (options.onError) return options.onError(error, context);
+  return json(500, { error: 'InternalServerError' });
 }
 
 // ---------------------------------------------------------------------------
@@ -378,20 +446,21 @@ async function readBody(request: Request): Promise<unknown> {
 // ---------------------------------------------------------------------------
 
 async function validateParams(
-  entry: Compiled,
-  raw: Record<string, string>,
+  name: string,
+  route: AnyRoute,
+  raw: MatchedRequest['params'],
   coerce: boolean,
 ): Promise<Record<string, unknown>> {
-  const spec = entry.route.params;
+  const spec = route.params;
   if (spec === undefined) return raw;
   if (isSchema(spec)) {
-    const parsed = await validateLenient('params', spec, raw, entry.name, coerce);
+    const parsed = await validateLenient('params', spec, raw, name, coerce);
     return { ...raw, ...(parsed as Record<string, unknown>) };
   }
   const result: Record<string, unknown> = { ...raw };
   for (const [key, schema] of Object.entries(spec)) {
     if (!isSchema(schema)) continue;
-    result[key] = await validateLenient('params', schema, raw[key], entry.name, coerce, key);
+    result[key] = await validateLenient('params', schema, raw[key], name, coerce, key);
   }
   return result;
 }
@@ -459,8 +528,22 @@ function isSchema(value: unknown): value is AnySchema {
   return typeof value === 'object' && value !== null && '~standard' in value;
 }
 
+/**
+ * Duck-typed on purpose: the error may come from another copy of endpoint-kit (the main entry
+ * next to this one, or the ESM build next to the CJS one), where `instanceof` fails.
+ */
 function isTaggedError(value: unknown): value is TaggedError {
-  return value instanceof TaggedError;
+  return (
+    value instanceof TaggedError ||
+    (value instanceof Error && typeof (value as { _tag?: unknown })._tag === 'string')
+  );
+}
+
+function isValidationError(value: unknown): value is ValidationError {
+  return (
+    value instanceof ValidationError ||
+    (isTaggedError(value) && value._tag === 'ValidationError' && 'issues' in value)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -469,20 +552,23 @@ function isTaggedError(value: unknown): value is TaggedError {
 
 async function toResponse(
   result: unknown,
-  entry: Compiled,
+  name: string,
+  route: AnyRoute,
   options: ServerOptions,
 ): Promise<Response> {
   if (result instanceof Response) return result;
-  if (result instanceof HttpReply) return replyToResponse(result);
+  if (HttpReply.is(result)) return result.toResponse();
 
-  const { route } = entry;
-  let body = result;
-  if (options.validateResponse !== false && route.response) {
-    const outcome = await route.response['~standard'].validate(result);
-    if (outcome.issues) throw new ValidationError('response', outcome.issues, entry.name);
-    body = outcome.value;
+  const schema = options.validateResponse !== false ? route.response : undefined;
+  if (route.responseType === 'sse') {
+    // A ready-made event stream goes out as is; an async iterable (a generator) of events is
+    // encoded as SSE, each event validated on its way out.
+    if (result instanceof ReadableStream)
+      return new Response(result, { status: 200, headers: SSE_HEADERS });
+    if (isAsyncIterable(result)) return serverSentEventsResponse(result, schema, name);
   }
 
+  const body = await validateResponse(schema, result, name);
   switch (route.responseType) {
     case 'none':
       return new Response(null, { status: 204 });
@@ -514,19 +600,54 @@ function taggedErrorResponse(error: TaggedError, options: ServerOptions): Respon
   return json(status, body);
 }
 
-function replyToResponse(answer: HttpReply): Response {
-  const { status, body, headers } = answer;
-  if (body === undefined || body === null) return new Response(null, { status, headers });
-  if (
-    typeof body === 'string' ||
-    body instanceof Blob ||
-    body instanceof ReadableStream ||
-    body instanceof ArrayBuffer
-  ) {
-    return new Response(body, { status, headers });
-  }
-  return json(status, body, headers);
+async function validateResponse(
+  schema: AnySchema | undefined,
+  value: unknown,
+  route: string,
+): Promise<unknown> {
+  if (!schema) return value;
+  const outcome = await schema['~standard'].validate(value);
+  if (outcome.issues) throw new ValidationError('response', outcome.issues, route);
+  return outcome.value;
 }
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return typeof value === 'object' && value !== null && Symbol.asyncIterator in value;
+}
+
+/**
+ * Stream what `events` yields as server-sent events, one JSON `data:` line per event. An
+ * invalid event aborts the stream, so the client's iteration fails instead of ending quietly.
+ */
+function serverSentEventsResponse(
+  events: AsyncIterable<unknown>,
+  schema: AnySchema | undefined,
+  route: string,
+): Response {
+  const iterator = events[Symbol.asyncIterator]();
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const next = await iterator.next();
+        if (next.done) {
+          controller.close();
+          return;
+        }
+        const data = await validateResponse(schema, next.value, route);
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data ?? null)}\n\n`));
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    async cancel() {
+      await iterator.return?.();
+    },
+  });
+  return new Response(stream, { status: 200, headers: SSE_HEADERS });
+}
+
+const SSE_HEADERS = { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' };
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {

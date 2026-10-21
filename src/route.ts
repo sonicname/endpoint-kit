@@ -471,8 +471,15 @@ export type RouteQueryOutput<R extends AnyRoute> = OutputOf<R['query'], undefine
 /** Body after validation, `undefined` when the route has no body schema. */
 export type RouteBodyOutput<R extends AnyRoute> = OutputOf<R['body'], undefined>;
 
-/** What a server handler must return: the response schema *input*, or `unknown` without one. */
-export type RouteResponseInput<R extends AnyRoute> = InputOf<R['response'], unknown>;
+/**
+ * What a server handler must return: the response schema *input*, or `unknown` without one.
+ * For `responseType: 'sse'` it is an async iterable of events (each one a schema input), or a
+ * ready-made `ReadableStream`.
+ */
+export type RouteResponseInput<R extends AnyRoute> =
+  NonNullable<R['responseType']> extends 'sse'
+    ? AsyncIterable<InputOf<R['response'], unknown>> | ReadableStream<Uint8Array>
+    : InputOf<R['response'], unknown>;
 
 /** Options every call accepts in addition to params/query/body/headers. */
 export interface CallOptionsBase {

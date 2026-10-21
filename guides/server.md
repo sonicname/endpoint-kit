@@ -104,6 +104,16 @@ registerHono(app, routes, handlers, { basePath: '/api' });
 The Node adapter streams request and response bodies, forwards every `set-cookie`, and
 rebuilds the URL from `x-forwarded-proto` / `x-forwarded-host` only when `trustProxy` is set.
 
+A framework that already matched the request (React Router loaders, a Hono route) can skip the
+matching and hand one route to `handleRoute`:
+
+```ts
+import { handleRoute } from 'endpoint-kit/server';
+
+export const loader = ({ request, params }: LoaderFunctionArgs) =>
+  handleRoute('getTodo', routes.getTodo, handlers.getTodo, { request, params });
+```
+
 ## 4. The client
 
 ```ts
