@@ -1,5 +1,25 @@
 # endpoint-kit
 
+## 0.3.0
+
+### Minor Changes
+
+- **Server**
+  
+  - `handleRoute(name, route, handler, { request, params }, options)`: validate and answer one
+    route whose request another router already matched (React Router loaders, Hono routes...).
+    `createFetchHandler` is now route matching plus `handleRoute`.
+  - `errorToResponse(error, { route, request }, options)`: the response for an error thrown while
+    handling a route (thrown `reply`, `ValidationError`, `TaggedError`, `onError`), for code that
+    wraps handlers.
+  - `HttpReply#toResponse()` turns a `reply()` into a `Response`.
+  - A handler for an `sse` route may return an async iterable: each event is validated against
+    `response` and streamed as a `data:` line; a `ReadableStream` is still passed through.
+  - Errors and replies are recognised across copies of endpoint-kit: a `TaggedError` subclass
+    imported from `endpoint-kit` and thrown in a handler served by `endpoint-kit/server` (two
+    separate bundles) now answers with its `status` instead of 500. `HttpReply.is(value)` does the
+    same for replies.
+
 ## 0.2.0
 
 ### Minor Changes
